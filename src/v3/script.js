@@ -11,7 +11,9 @@
   const stage = $('stage');
   let stageScale = 1, renderer = null;
   function fit(){
-    stageScale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    // presentation margin: the stage never touches the window edges (≈2.5% of the width, 16–48px)
+    const pad = Math.round(Math.min(48, Math.max(16, window.innerWidth * 0.025)));
+    stageScale = Math.min((window.innerWidth - pad*2) / W, (window.innerHeight - pad*2) / H);
     stage.style.setProperty('--s', stageScale);
     if (renderer){
       renderer.setPixelRatio(Math.min(2, Math.max(0.5, (window.devicePixelRatio || 1) * stageScale)));
@@ -800,11 +802,33 @@
     }
   }
 
+  // --- hull damage sections on the ship outline (see .dmg in the CSS)
+  const DMG = { aft:$('dmg-aft'), bridge:$('dmg-bridge'), nose:$('dmg-nose'), pod:$('dmg-pod') };
+  const dmgLevel = { aft:0, bridge:0, nose:0, pod:0 };
+  const _hd = new THREE.Vector3();
+  function paintDamage(){ for (const k in DMG) DMG[k].className = 'dmg' + (dmgLevel[k] ? ' l' + dmgLevel[k] : ''); }
+  function hitSection(fromPos){
+    // which part of the profile faces the hit: front → nose, behind → aft, below → lower pod, otherwise bridge
+    _hd.subVectors(fromPos, ship.pos);
+    const f = _hd.dot(fwd), sd = Math.abs(_hd.dot(right)), u = _hd.y;
+    if (u < -2.5 && -u > Math.abs(f) * 0.6) return 'pod';
+    if (Math.abs(f) > sd * 0.8) return f > 0 ? 'nose' : 'aft';
+    return 'bridge';
+  }
+  function damageSection(fromPos){
+    const k = hitSection(fromPos);
+    dmgLevel[k] = Math.min(3, dmgLevel[k] + 1);
+    paintDamage();
+    DMG[k].classList.add('flash');
+    setTimeout(() => DMG[k].classList.remove('flash'), 140);
+  }
+  function repairDamage(all){ for (const k in dmgLevel) dmgLevel[k] = all ? 0 : Math.max(0, dmgLevel[k] - 1); paintDamage(); }
+
   function damageShip(amount, fromPos){
     if (shield <= 0){ sfxImpact(); endMission('HULL BREACH'); return false; }
     shield = Math.max(0, shield - amount - Math.random()*10);
     flashTimer = 0.18; regenDelay = 2.5; impactNote = 1.2; invuln = 0.8;
-    el.hit.classList.add('on'); el.shipHit.classList.add('on');
+    el.hit.classList.add('on'); el.shipHit.classList.add('on'); damageSection(fromPos);
     shieldBlock.classList.remove('hit'); void shieldBlock.offsetWidth; shieldBlock.classList.add('hit');
     setTimeout(() => { el.hit.classList.remove('on'); el.shipHit.classList.remove('on'); }, 160);
     sfxImpact();
@@ -831,6 +855,7 @@
     for (const sh of shards){ sh.active = false; sh.mesh.visible = false; }
     ship.pos.set(0,0,0); ship.vel.set(0,0,0); ship.yaw = 0; ship.yawRate = 0; ship.strafeV = 0; ship.vy = 0;
     shield = SHIELD_MAX; score = 0; energy = 100; cooldown = 0; regenDelay = 0; impactNote = 0; flashTimer = 0; invuln = 0;
+    repairDamage(true);
     wave = 1; wavesCleared = 0; waveBreak = 0; lockTarget = null; litShown = -1;
     for (const sc of saucers) removeSaucer(sc);
     for (const b of bolts){ b.life = 0; b.sp.visible = false; }
@@ -1077,7 +1102,7 @@
         if (rocksAlive() === 0){
           const bonus = Math.floor(waveTime * 100);
           score += bonus; wavesCleared++; waveBreak = 3; banner = 3; lastBonus = bonus;
-          shield = Math.min(SHIELD_MAX, shield + 60);
+          shield = Math.min(SHIELD_MAX, shield + 60); repairDamage(false);
         } else if (waveTime <= 0) endMission('OUT OF TIME');
       }
     }

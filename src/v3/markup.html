@@ -99,7 +99,24 @@
   #ship-hit{ background:var(--red); opacity:0; transition:opacity .35s;
     -webkit-mask:url(%%ship@2x.png%%) center/100% 100% no-repeat; mask:url(%%ship@2x.png%%) center/100% 100% no-repeat;
     filter:drop-shadow(0 0 6px var(--red)); }
-  #ship-hit.on{ opacity:.9; transition:opacity .05s; }
+  #ship-hit.on{ opacity:.45; transition:opacity .05s; }
+  /* hull damage: the ship outline is split into 4 sections (aft, bridge, nose, lower pod). The section facing
+     the hit lights up and stays damaged: 1 = amber, 2 = orange flicker, 3 = red glitching. Clearing a round
+     repairs one level on every section. */
+  .dmg{ position:absolute; inset:0; opacity:0; pointer-events:none;
+    -webkit-mask:url(%%ship@2x.png%%) center/100% 100% no-repeat; mask:url(%%ship@2x.png%%) center/100% 100% no-repeat; }
+  #dmg-aft{ clip-path:inset(0 67% 32% 0); }
+  #dmg-bridge{ clip-path:inset(0 28% 32% 33%); }
+  #dmg-nose{ clip-path:inset(0 0 32% 72%); }
+  #dmg-pod{ clip-path:inset(68% 0 0 0); }
+  .dmg.l1{ background:#ffc04a; opacity:.85; filter:drop-shadow(0 0 1px #ffc04a) drop-shadow(0 0 4px rgba(255,176,58,.8)); animation:dmg1 2.4s ease-in-out infinite; }
+  .dmg.l2{ background:#ff8a3a; opacity:1; filter:drop-shadow(0 0 1px #ff8a3a) drop-shadow(0 0 5px rgba(255,122,58,.85)); animation:dmg2 .9s steps(2) infinite; }
+  .dmg.l3{ background:#ff4a46; opacity:1; filter:drop-shadow(0 0 1px #ff4a46) drop-shadow(0 0 7px rgba(252,67,64,.95)); animation:dmg3 .45s steps(3) infinite; }
+  .dmg.flash{ background:#fff !important; opacity:1 !important; animation:none !important; filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 10px var(--red)) !important; }
+  @keyframes dmg1{ 50%{ opacity:.5; } }
+  @keyframes dmg2{ 50%{ opacity:.55; } }
+  @keyframes dmg3{ 0%{ opacity:1; transform:none; } 33%{ opacity:.35; transform:translateX(1.5px); } 66%{ opacity:.9; transform:translateX(-1px); } }
+  @media (prefers-reduced-motion: reduce){ .dmg{ animation:none !important; } }
 
   /* ---------- shield ---------- */
   #shield{ left:725px; top:988px; width:470px; height:40px; }
@@ -271,7 +288,10 @@
     </div>
 
     <!-- ship + shields -->
-    <div class="abs" id="ship"><img src="%%ship@2x.png%%" alt=""><div id="ship-hit"></div></div>
+    <div class="abs" id="ship"><img src="%%ship@2x.png%%" alt="">
+      <div class="dmg" id="dmg-aft"></div><div class="dmg" id="dmg-bridge"></div>
+      <div class="dmg" id="dmg-nose"></div><div class="dmg" id="dmg-pod"></div>
+      <div id="ship-hit"></div></div>
     <div class="abs" id="shield">
       <div class="abs" id="meter">%%SHIELD_L%%%%SHIELD_R%%</div>
       <div class="abs num trim" id="shield-num">257</div>
