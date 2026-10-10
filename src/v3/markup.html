@@ -34,7 +34,8 @@
   #scene{ position:absolute; left:0; top:0; width:1920px; height:1080px; display:block; }
   #vignette{ position:absolute; inset:0; pointer-events:none;
     background:radial-gradient(ellipse 75% 70% at 50% 50%, rgba(0,0,0,0) 50%, rgba(0,0,0,.72) 100%); }
-  .bezel{ position:absolute; left:0; width:1920px; pointer-events:none; display:block; }
+  /* viewscreen bezels sit above everything, overlay screens included */
+  .bezel{ position:absolute; left:0; width:1920px; pointer-events:none; display:block; z-index:30; }
   #hud{ position:absolute; inset:0; pointer-events:none; }
 
   /* ---------- type, from Figma ---------- */
