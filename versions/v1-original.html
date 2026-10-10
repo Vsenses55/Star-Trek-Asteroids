@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ASTEROID FIELD — NAV HUD</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root{
+    --cyan:      #8FF3FF;
+    --cyan-dim:  #4E8C99;
+    --cyan-glow: rgba(143,243,255,0.55);
+    --red:       #FF3B3B;
+    --bg:        #01050a;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html,body{
+    width:100%; height:100%;
+    background:var(--bg);
+    overflow:hidden;
+    font-family:'Share Tech Mono', monospace;
+    color:var(--cyan);
+  }
+
+  #scene{ position:fixed; inset:0; z-index:0; }
+
+  #hud{
+    position:fixed; inset:0; z-index:5;
+    pointer-events:none;
+    display:flex; flex-direction:column; justify-content:space-between;
+  }
+
+  /* ---------- vignette + scanlines ---------- */
+  #vignette{
+    position:fixed; inset:0; z-index:4; pointer-events:none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.65) 100%);
+  }
+  #scanlines{
+    position:fixed; inset:0; z-index:6; pointer-events:none; opacity:0.05;
+    background: repeating-linear-gradient(0deg, #fff 0px, transparent 1px, transparent 3px);
+  }
+
+  /* ---------- reusable readout ---------- */
+  .stat-label{
+    font-size:11px; letter-spacing:3px; color:var(--cyan-dim);
+    text-shadow:0 0 6px rgba(78,140,153,0.5);
+  }
+  .stat-value{
+    font-family:'Orbitron', sans-serif; font-weight:700;
+    font-size:44px; line-height:1; color:var(--cyan);
+    text-shadow:0 0 12px var(--cyan-glow), 0 0 30px rgba(143,243,255,0.25);
+    display:flex; align-items:flex-end; gap:6px;
+  }
+  .stat-value .sub{
+    font-family:'Share Tech Mono', monospace;
+    font-size:13px; font-weight:400; color:var(--cyan-dim);
+    padding-bottom:6px;
+  }
+
+  /* ---------- top bar ---------- */
+  #top-bar{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:34px 46px 0 46px;
+  }
+  #time-block{
+    position:absolute; left:50%; top:34px; transform:translateX(-50%);
+    text-align:center;
+  }
+  #time-block .stat-value{
+    font-size:34px; justify-content:center; letter-spacing:2px;
+  }
+
+  /* ---------- warning + reticle ---------- */
+  #center-stack{
+    position:absolute; left:50%; top:170px; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center;
+    text-align:center;
+  }
+  #warning{
+    font-family:'Orbitron', sans-serif; font-weight:900;
+    font-size:34px; letter-spacing:4px; color:var(--red);
+    text-shadow:0 0 14px rgba(255,59,59,0.85), 0 0 34px rgba(255,59,59,0.4);
+    animation: warnPulse 1.4s ease-in-out infinite;
+    margin-bottom:14px;
+  }
+  @keyframes warnPulse{
+    0%,100%{ opacity:1; }
+    50%{ opacity:0.45; }
+  }
+  #compass{
+    width:230px; height:16px; position:relative; margin-bottom:6px;
+    color:var(--cyan-dim); font-size:10px; letter-spacing:2px;
+  }
+  #compass .lbl{ position:absolute; top:0; }
+  #compass .l{ left:0; } #compass .r{ right:0; }
+  #reticle-wrap{ position:relative; width:230px; height:230px; }
+  #reticle-arrow{
+    position:absolute; top:-14px; left:50%; transform:translateX(-50%);
+    width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent;
+    border-top:10px solid var(--cyan); filter:drop-shadow(0 0 6px var(--cyan-glow));
+  }
+  #reticle-circle{
+    position:absolute; inset:0; border-radius:50%;
+    border:1px solid rgba(143,243,255,0.4);
+  }
+  #reticle-brackets{ position:absolute; inset:0; }
+  .bracket{ position:absolute; width:16px; height:16px; border-color:var(--cyan); opacity:0.85; }
+  .bracket.tl{ top:-4px; left:-4px; border-top:2px solid; border-left:2px solid; }
+  .bracket.tr{ top:-4px; right:-4px; border-top:2px solid; border-right:2px solid; }
+  .bracket.bl{ bottom:-4px; left:-4px; border-bottom:2px solid; border-left:2px solid; }
+  .bracket.br{ bottom:-4px; right:-4px; border-bottom:2px solid; border-right:2px solid; }
+  #crosshair-h, #crosshair-v{ position:absolute; background:rgba(143,243,255,0.35); }
+  #crosshair-h{ top:50%; left:-40px; right:-40px; height:1px; }
+  #crosshair-v{ left:50%; top:-40px; bottom:-40px; width:1px; }
+
+  #range{
+    font-family:'Orbitron', sans-serif; font-weight:700; font-size:20px;
+    color:#fff; text-shadow:0 0 10px var(--cyan-glow); margin-top:8px;
+  }
+  #analysis{
+    font-size:11px; letter-spacing:2px; color:var(--cyan-dim); margin-top:2px;
+  }
+
+  /* ---------- side rulers ---------- */
+  .ruler{
+    position:absolute; top:270px; bottom:230px; width:60px;
+  }
+  .ruler.left{ left:44px; }
+  .ruler.right{ right:44px; }
+  .ruler .line{
+    position:absolute; top:0; bottom:0; left:16px; width:1px;
+    background:rgba(143,243,255,0.3);
+  }
+  .ruler.right .line{ left:auto; right:16px; }
+  .tick{
+    position:absolute; left:8px; display:flex; align-items:center; gap:6px;
+    font-size:10px; color:var(--cyan-dim);
+  }
+  .ruler.right .tick{ left:auto; right:8px; flex-direction:row-reverse; }
+  .tick .mark{ width:14px; height:1px; background:rgba(143,243,255,0.4); }
+  .bubble{
+    position:absolute; left:-2px; transform:translateY(-50%);
+    background:rgba(1,10,14,0.85); border:1px solid var(--cyan);
+    border-radius:11px; padding:3px 10px; font-size:11px; font-weight:700;
+    color:var(--cyan); white-space:nowrap;
+    box-shadow:0 0 10px rgba(143,243,255,0.35);
+  }
+  .ruler.right .bubble{ left:auto; right:-2px; }
+
+  /* ---------- bottom ---------- */
+  #bottom-bar{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    padding:0 46px 30px 46px;
+  }
+  #ship-wrap{
+    position:absolute; left:50%; bottom:96px; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center;
+  }
+  #ship-wrap svg{ filter:drop-shadow(0 0 8px var(--cyan-glow)); transition:transform 0.15s ease-out; transform-origin:50% 50%; }
+
+  #shield-block{
+    position:absolute; left:50%; bottom:26px; transform:translateX(-50%);
+    text-align:center;
+  }
+  #shield-row{ display:flex; align-items:center; gap:16px; justify-content:center; }
+  .hatch{
+    width:120px; height:14px;
+    background:repeating-linear-gradient(60deg, var(--cyan-dim) 0 2px, transparent 2px 8px);
+    opacity:0.55;
+    mask-image:linear-gradient(90deg, transparent, black 30%, black 70%, transparent);
+  }
+  #shield-num{
+    font-family:'Orbitron', sans-serif; font-weight:700; font-size:30px; color:var(--cyan);
+    text-shadow:0 0 12px var(--cyan-glow);
+  }
+  #shield-status{
+    font-size:11px; letter-spacing:1.5px; color:var(--cyan-dim); margin-top:4px;
+  }
+  #shield-status b{ color:var(--cyan); font-weight:700; }
+
+  #hit-flash{
+    position:fixed; inset:0; z-index:7; pointer-events:none;
+    background:radial-gradient(ellipse at center, rgba(255,59,59,0.0) 40%, rgba(255,59,59,0.0) 100%);
+    opacity:0; transition:opacity 0.08s ease-out;
+  }
+  #hit-flash.active{
+    opacity:1;
+    background:radial-gradient(ellipse at center, rgba(255,59,59,0.05) 30%, rgba(255,59,59,0.55) 100%);
+  }
+  #controls-hint{
+    position:fixed; left:50%; bottom:8px; transform:translateX(-50%);
+    z-index:5; font-size:10px; letter-spacing:2px; color:var(--cyan-dim);
+    opacity:0.65; pointer-events:none; text-align:center;
+  }
+  #controls-hint b{ color:var(--cyan); }
+  #shields-down-msg{
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:8; font-family:'Orbitron',sans-serif; font-weight:900; font-size:26px;
+    color:var(--red); letter-spacing:4px; text-shadow:0 0 20px rgba(255,59,59,0.8);
+    opacity:0; transition:opacity 0.3s; pointer-events:none;
+  }
+  #shields-down-msg.show{ opacity:1; }
+
+  /* corner frame accents */
+  .corner-frame{ position:fixed; z-index:5; width:26px; height:26px; pointer-events:none; opacity:0.6; }
+  .corner-frame.tl{ top:14px; left:14px; border-top:2px solid var(--cyan-dim); border-left:2px solid var(--cyan-dim); }
+  .corner-frame.tr{ top:14px; right:14px; border-top:2px solid var(--cyan-dim); border-right:2px solid var(--cyan-dim); }
+  .corner-frame.bl{ bottom:14px; left:14px; border-bottom:2px solid var(--cyan-dim); border-left:2px solid var(--cyan-dim); }
+  .corner-frame.br{ bottom:14px; right:14px; border-bottom:2px solid var(--cyan-dim); border-right:2px solid var(--cyan-dim); }
+</style>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+<div id="vignette"></div>
+<div id="scanlines"></div>
+<div id="hit-flash"></div>
+<div id="shields-down-msg">SHIELDS CRITICAL</div>
+<div id="controls-hint"><b>◀ ▶ / A D</b> STEER &nbsp;&nbsp; <b>▲ ▼ / W S</b> PITCH &nbsp;&nbsp; — AVOID THE DEBRIS —</div>
+
+<div class="corner-frame tl"></div>
+<div class="corner-frame tr"></div>
+<div class="corner-frame bl"></div>
+<div class="corner-frame br"></div>
+
+<div id="hud">
+
+  <div id="top-bar">
+    <div>
+      <div class="stat-label">VELOCITY</div>
+      <div class="stat-value" id="velocity">45<span class="sub" id="velocity-sub">0.7 MCU</span></div>
+    </div>
+    <div>
+      <div class="stat-label" style="text-align:right;">GRAVITATION OUTPUT</div>
+      <div class="stat-value" id="gravity" style="justify-content:flex-end;">625<span class="sub">MCH</span></div>
+    </div>
+  </div>
+
+  <div id="time-block">
+    <div class="stat-label">TIME REMAINING</div>
+    <div class="stat-value" id="time">01:14:03</div>
+  </div>
+
+  <div id="center-stack">
+    <div id="warning">DEBRIS AHEAD</div>
+    <div id="compass">
+      <span class="lbl l">L</span><span class="lbl r">R</span>
+    </div>
+    <div id="reticle-wrap">
+      <div id="reticle-arrow"></div>
+      <div id="reticle-circle"></div>
+      <div id="crosshair-h"></div>
+      <div id="crosshair-v"></div>
+      <div id="reticle-brackets">
+        <div class="bracket tl"></div><div class="bracket tr"></div>
+        <div class="bracket bl"></div><div class="bracket br"></div>
+      </div>
+    </div>
+    <div id="range"><span id="range-num">33</span>M</div>
+    <div id="analysis">ASTEROID FIELD ANALYSIS: <span id="analysis-word">SLIGHT DEBRIS AHEAD</span></div>
+  </div>
+
+  <div class="ruler left">
+    <div class="line"></div>
+    <div class="tick" style="top:0%;"><span class="mark"></span>200</div>
+    <div class="tick" style="top:25%;"><span class="mark"></span>100</div>
+    <div class="tick" style="top:50%;"><span class="mark"></span>0</div>
+    <div class="tick" style="top:75%;"><span class="mark"></span>-100</div>
+    <div class="tick" style="top:100%;"><span class="mark"></span>-200</div>
+    <div class="bubble" id="bubble-left" style="top:37%;">60M</div>
+  </div>
+  <div class="ruler right">
+    <div class="line"></div>
+    <div class="tick" style="top:0%;">200<span class="mark"></span></div>
+    <div class="tick" style="top:25%;">100<span class="mark"></span></div>
+    <div class="tick" style="top:50%;">0<span class="mark"></span></div>
+    <div class="tick" style="top:75%;">-100<span class="mark"></span></div>
+    <div class="tick" style="top:100%;">-200<span class="mark"></span></div>
+    <div class="bubble" id="bubble-right" style="top:63%;">-90M</div>
+  </div>
+
+  <div id="ship-wrap">
+    <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
+      <path d="M110 4 L128 30 L200 44 L200 50 L150 48 L132 56 L132 62 L120 62 L116 50 L104 50 L100 62 L88 62 L88 56 L70 48 L20 50 L20 44 L92 30 Z"
+            stroke="#8FF3FF" stroke-width="1.4" stroke-linejoin="round"/>
+      <line x1="110" y1="4" x2="110" y2="30" stroke="#8FF3FF" stroke-width="1"/>
+    </svg>
+  </div>
+
+  <div id="shield-block">
+    <div id="shield-row">
+      <div class="hatch"></div>
+      <div id="shield-num">257</div>
+      <div class="hatch"></div>
+    </div>
+    <div id="shield-status">SHIELD MODULATION STATUS: <b>PRIMARY SYSTEM ACTIVE</b></div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------------------------------------------------------------
+  // THREE.JS SCENE
+  // ---------------------------------------------------------------
+  const canvas = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x01050a, 1);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x01060a, 0.014);
+
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 900);
+  camera.position.set(0,0,0);
+
+  // --- lighting: cold ambient + cyan rim lights so rocks read like the reference ---
+  scene.add(new THREE.AmbientLight(0x1a2a30, 1.1));
+  const rim1 = new THREE.PointLight(0x8ff3ff, 2.2, 400);
+  rim1.position.set(-60, 40, -60);
+  scene.add(rim1);
+  const rim2 = new THREE.PointLight(0x3a6b78, 1.4, 400);
+  rim2.position.set(60, -30, -40);
+  scene.add(rim2);
+  const keyLight = new THREE.DirectionalLight(0x9fd8e0, 0.6);
+  keyLight.position.set(20, 30, 10);
+  scene.add(keyLight);
+
+  // --- starfield ---
+  (function makeStars(){
+    const count = 1800;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count*3);
+    for(let i=0;i<count;i++){
+      const r = 200 + Math.random()*500;
+      const theta = Math.random()*Math.PI*2;
+      const phi = Math.acos((Math.random()*2)-1);
+      pos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+      pos[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+      pos[i*3+2] = -Math.abs(r*Math.cos(phi)) - 50;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    const mat = new THREE.PointsMaterial({ color:0xbfe9f2, size:1.1, transparent:true, opacity:0.75 });
+    scene.add(new THREE.Points(geo, mat));
+  })();
+
+  // --- distant planet (left side, like reference) ---
+  const planetGeo = new THREE.SphereGeometry(140, 48, 48);
+  const planetMat = new THREE.MeshStandardMaterial({
+    color:0x123038, roughness:1, metalness:0,
+    emissive:0x0c2a30, emissiveIntensity:0.35
+  });
+  const planet = new THREE.Mesh(planetGeo, planetMat);
+  planet.position.set(-190, 10, -320);
+  scene.add(planet);
+  const planetRim = new THREE.PointLight(0x6fe8ff, 3, 500);
+  planetRim.position.set(-260, 40, -260);
+  scene.add(planetRim);
+
+  // --- rocky asteroid geometry factory: multi-octave displacement for craters + ridges ---
+  function makeAsteroidGeometry(seed, flat){
+    let geo = new THREE.IcosahedronGeometry(1, 2); // higher subdivision = smoother crater detail
+    const pos = geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const n = v.clone().normalize();
+      // large ridges (low frequency)
+      const n1 = 0.5*Math.sin(seed + n.x*2.2 + n.y*1.3) + 0.5*Math.cos(seed*1.7 + n.y*2.7 + n.z*1.9);
+      // medium bumps
+      const n2 = 0.5*Math.sin(seed*2.3 + n.x*6.1 + n.z*5.4) + 0.5*Math.cos(seed*3.1 + n.y*7.2 + n.x*4.8);
+      // fine crater noise (high frequency)
+      const n3 = Math.sin(seed*4.7 + n.x*13 + n.y*11 + n.z*9);
+      const height = 1 + 0.24*n1 + 0.13*n2 + 0.06*n3;
+      v.copy(n.multiplyScalar(Math.max(0.5, height)));
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    if(flat) geo = geo.toNonIndexed(); // required for correct flat-shaded face normals
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // --- procedural surface textures, generated once and shared across all asteroids (cheap on the GPU) ---
+  function makeBumpTexture(){
+    const size = 256;
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0,0,size,size);
+    for(let i=0;i<50;i++){
+      const x=Math.random()*size, y=Math.random()*size, r=4+Math.random()*24;
+      const dark = Math.random()>0.45;
+      const grad = ctx.createRadialGradient(x,y,0,x,y,r);
+      if(dark){ grad.addColorStop(0,'rgba(30,30,30,0.9)'); grad.addColorStop(1,'rgba(128,128,128,0)'); }
+      else    { grad.addColorStop(0,'rgba(215,215,215,0.65)'); grad.addColorStop(1,'rgba(128,128,128,0)'); }
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+  function makeCrackTexture(color){
+    const size = 256;
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,size,size);
+    ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.shadowColor = color; ctx.shadowBlur = 5;
+    for(let i=0;i<6;i++){
+      let x = Math.random()*size, y = Math.random()*size;
+      ctx.beginPath(); ctx.moveTo(x,y);
+      const steps = 5 + Math.floor(Math.random()*6);
+      for(let s=0;s<steps;s++){ x += (Math.random()-0.5)*44; y += (Math.random()-0.5)*44; ctx.lineTo(x,y); }
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  // three rock "families" so the field reads as varied, not one rock copy-pasted —
+  // each family shares ONE bump + crack texture across every asteroid that uses it
+  const sharedBump = makeBumpTexture();
+  const rockFamilies = [
+    { color:0x1c2226, roughness:0.95, flat:true,  bump:sharedBump, crack:makeCrackTexture('#8ff3ff') }, // carbonaceous, rough
+    { color:0x2a3a40, roughness:0.55, flat:false, bump:sharedBump, crack:makeCrackTexture('#8ff3ff') }, // icy, smoother
+    { color:0x332c22, roughness:0.85, flat:true,  bump:sharedBump, crack:makeCrackTexture('#ffb26b') }, // metallic-tinted, warm cracks
+  ];
+
+  const ASTEROID_COUNT = 26;
+  const asteroids = [];
+  const FIELD_RADIUS = 55;
+  const SPAWN_Z_FAR = -420;
+  const DESPAWN_Z = 12;
+
+  function resetAsteroid(a, initial){
+    const ang = Math.random()*Math.PI*2;
+    const rad = 6 + Math.random()*FIELD_RADIUS;
+    a.mesh.position.set(
+      Math.cos(ang)*rad,
+      Math.sin(ang)*rad*0.6,
+      initial ? -Math.random()*SPAWN_Z_FAR*-1 - 20 : SPAWN_Z_FAR - Math.random()*120
+    );
+    const s = 1.2 + Math.random()*5.5;
+    a.mesh.scale.setScalar(s);
+    a.speed = 18 + Math.random()*22;
+    a.rotSpeed.set(
+      (Math.random()-0.5)*0.5,
+      (Math.random()-0.5)*0.5,
+      (Math.random()-0.5)*0.5
+    );
+    a.mesh.visible = true;
+    a.pendingRespawn = 0;
+  }
+
+  for(let i=0;i<ASTEROID_COUNT;i++){
+    const family = rockFamilies[i % rockFamilies.length];
+    const geo = makeAsteroidGeometry(i*1.7, family.flat);
+    const mat = new THREE.MeshStandardMaterial({
+      color: family.color, roughness: family.roughness, metalness:0.05,
+      flatShading: family.flat,
+      bumpMap: family.bump, bumpScale: 0.06,
+      emissiveMap: family.crack, emissive: new THREE.Color(0x8ff3ff),
+      emissiveIntensity: 0.1
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    const a = { mesh, speed:0, rotSpeed:new THREE.Vector3(), pendingRespawn:0 };
+    resetAsteroid(a, true);
+    scene.add(mesh);
+    asteroids.push(a);
+  }
+
+  // --- fracture debris: small pooled shard burst spawned when the ship clips a rock ---
+  const SHARD_POOL_SIZE = 48;
+  const shardGeo = new THREE.TetrahedronGeometry(0.4, 0);
+  const shardMat = new THREE.MeshStandardMaterial({
+    color:0x232a2e, emissive:0x8ff3ff, emissiveIntensity:0.5, roughness:0.8
+  });
+  const shards = [];
+  for(let i=0;i<SHARD_POOL_SIZE;i++){
+    const mesh = new THREE.Mesh(shardGeo, shardMat);
+    mesh.visible = false;
+    scene.add(mesh);
+    shards.push({ mesh, vel:new THREE.Vector3(), rot:new THREE.Vector3(), life:0, maxLife:1, active:false });
+  }
+  function spawnFracture(position, scale){
+    let spawned = 0;
+    for(const sh of shards){
+      if(sh.active) continue;
+      sh.active = true; sh.mesh.visible = true;
+      sh.mesh.position.copy(position);
+      sh.mesh.scale.setScalar(0.4 + Math.random()*0.5*Math.min(scale,3));
+      sh.vel.set((Math.random()-0.5)*14, (Math.random()-0.5)*14, (Math.random()-0.5)*6 - 4);
+      sh.rot.set((Math.random()-0.5)*6, (Math.random()-0.5)*6, (Math.random()-0.5)*6);
+      sh.maxLife = 0.5 + Math.random()*0.4;
+      sh.life = sh.maxLife;
+      spawned++;
+      if(spawned >= 6) break;
+    }
+  }
+  function updateShards(dt){
+    for(const sh of shards){
+      if(!sh.active) continue;
+      sh.life -= dt;
+      if(sh.life <= 0){ sh.active = false; sh.mesh.visible = false; continue; }
+      sh.vel.multiplyScalar(1 - 3*dt);
+      sh.mesh.position.addScaledVector(sh.vel, dt);
+      sh.mesh.rotation.x += sh.rot.x*dt;
+      sh.mesh.rotation.y += sh.rot.y*dt;
+      sh.mesh.rotation.z += sh.rot.z*dt;
+      const fade = Math.max(0, sh.life/sh.maxLife);
+      sh.mesh.scale.multiplyScalar(0.985 + 0.015*fade); // gentle shrink toward the end
+    }
+  }
+
+  // --- subtle camera drift for "flying" feel ---
+  let camT = 0;
+
+  // ---------------------------------------------------------------
+  // STEERING (keyboard controls the ship's lateral/vertical offset)
+  // ---------------------------------------------------------------
+  const keys = { left:false, right:false, up:false, down:false };
+  const keyMap = {
+    ArrowLeft:'left', a:'left', A:'left',
+    ArrowRight:'right', d:'right', D:'right',
+    ArrowUp:'up', w:'up', W:'up',
+    ArrowDown:'down', s:'down', S:'down'
+  };
+  window.addEventListener('keydown', (e)=>{
+    const k = keyMap[e.key];
+    if(k){ keys[k] = true; e.preventDefault(); }
+  });
+  window.addEventListener('keyup', (e)=>{
+    const k = keyMap[e.key];
+    if(k){ keys[k] = false; e.preventDefault(); }
+  });
+
+  let shipX = 0, shipY = 0;   // ship offset from center axis
+  let shipVX = 0, shipVY = 0; // steering velocity
+  const STEER_ACCEL = 34;
+  const STEER_DRAG = 3.2;
+  const STEER_MAX_OFFSET = 24;
+  const STEER_MAX_SPEED = 22;
+
+  // --- handle resize ---
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------------------------------------------------------------
+  // HUD DATA SIM
+  // ---------------------------------------------------------------
+  const velocityEl = document.getElementById('velocity');
+  const velocitySub = document.getElementById('velocity-sub');
+  const gravityEl = document.getElementById('gravity');
+  const timeEl = document.getElementById('time');
+  const rangeNumEl = document.getElementById('range-num');
+  const bubbleLeft = document.getElementById('bubble-left');
+  const bubbleRight = document.getElementById('bubble-right');
+  const analysisWord = document.getElementById('analysis-word');
+  const warningEl = document.getElementById('warning');
+
+  const shipIconSvg = document.querySelector('#ship-wrap svg');
+  const hitFlashEl = document.getElementById('hit-flash');
+  const shieldNumEl = document.getElementById('shield-num');
+  const shieldStatusEl = document.getElementById('shield-status');
+  const shieldsDownEl = document.getElementById('shields-down-msg');
+
+  const SHIELD_MAX = 257;
+  let shield = SHIELD_MAX;
+  let flashTimer = 0;
+  let regenDelay = 0; // seconds since last hit before shield regenerates
+
+  function registerHit(){
+    shield = Math.max(0, shield - (28 + Math.random()*24));
+    flashTimer = 0.18;
+    regenDelay = 2.5;
+    shieldNumEl.textContent = Math.round(shield);
+    if(shield <= 0){
+      shieldsDownEl.classList.add('show');
+      shieldStatusEl.innerHTML = 'SHIELD MODULATION STATUS: <b style="color:var(--red)">CRITICAL — REROUTING POWER</b>';
+    } else {
+      shieldsDownEl.classList.remove('show');
+      shieldStatusEl.innerHTML = 'SHIELD MODULATION STATUS: <b>IMPACT DETECTED</b>';
+    }
+  }
+
+  let timeRemaining = 74*60 + 3; // seconds, matches 01:14:03
+  function fmtTime(s){
+    const m = Math.floor(s/60);
+    const sec = Math.floor(s%60);
+    const cs = Math.floor((s%1)*100);
+    return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+':'+String(cs).padStart(2,'0');
+  }
+
+  let lastHudUpdate = 0;
+
+  function updateHud(dt, nearestDist){
+    timeRemaining = Math.max(0, timeRemaining - dt);
+    timeEl.textContent = fmtTime(timeRemaining);
+
+    lastHudUpdate += dt;
+    if(lastHudUpdate > 0.12){
+      lastHudUpdate = 0;
+      const v = 43 + Math.round(Math.random()*4);
+      velocityEl.childNodes[0].nodeValue = v;
+      velocitySub.textContent = (0.5 + Math.random()*0.5).toFixed(1) + ' MCU';
+
+      const g = 618 + Math.round(Math.random()*14);
+      gravityEl.childNodes[0].nodeValue = g;
+
+      const bl = 55 + Math.round(Math.random()*10);
+      bubbleLeft.textContent = bl + 'M';
+      const br = -(85 + Math.round(Math.random()*10));
+      bubbleRight.textContent = br + 'M';
+    }
+
+    if(nearestDist !== null){
+      const meters = Math.max(4, Math.round(nearestDist));
+      rangeNumEl.textContent = meters;
+      if(meters < 25){
+        warningEl.style.color = 'var(--red)';
+        analysisWord.textContent = 'CRITICAL DEBRIS PROXIMITY';
+      } else if(meters < 60){
+        analysisWord.textContent = 'SLIGHT DEBRIS AHEAD';
+      } else {
+        analysisWord.textContent = 'FIELD DENSITY NOMINAL';
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // ANIMATION LOOP
+  // ---------------------------------------------------------------
+  const clock = new THREE.Clock();
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.1);
+    camT += dt;
+
+    // --- steering physics: accelerate ship offset from held keys, apply drag, clamp ---
+    let ax = 0, ay = 0;
+    if(keys.left)  ax -= STEER_ACCEL;
+    if(keys.right) ax += STEER_ACCEL;
+    if(keys.up)    ay += STEER_ACCEL;
+    if(keys.down)  ay -= STEER_ACCEL;
+    shipVX += ax*dt; shipVY += ay*dt;
+    shipVX -= shipVX*STEER_DRAG*dt; shipVY -= shipVY*STEER_DRAG*dt;
+    shipVX = THREE.MathUtils.clamp(shipVX, -STEER_MAX_SPEED, STEER_MAX_SPEED);
+    shipVY = THREE.MathUtils.clamp(shipVY, -STEER_MAX_SPEED, STEER_MAX_SPEED);
+    shipX = THREE.MathUtils.clamp(shipX + shipVX*dt, -STEER_MAX_OFFSET, STEER_MAX_OFFSET);
+    shipY = THREE.MathUtils.clamp(shipY + shipVY*dt, -STEER_MAX_OFFSET, STEER_MAX_OFFSET);
+
+    // shake on hit, added on top of ambient drift + steering
+    let shakeX = 0, shakeY = 0;
+    if(flashTimer > 0){
+      shakeX = (Math.random()-0.5)*1.4;
+      shakeY = (Math.random()-0.5)*1.4;
+    }
+
+    const driftX = Math.sin(camT*0.3)*1.6;
+    const driftY = Math.cos(camT*0.22)*1.0;
+    camera.position.x = driftX + shipX + shakeX;
+    camera.position.y = driftY + shipY + shakeY;
+    camera.rotation.z = Math.sin(camT*0.18)*0.02 - shipVX*0.006;
+    camera.lookAt(new THREE.Vector3(driftX + shipX, driftY + shipY, -100));
+
+    let nearest = Infinity;
+    for(const a of asteroids){
+      if(a.pendingRespawn > 0){
+        a.pendingRespawn -= dt;
+        if(a.pendingRespawn <= 0) resetAsteroid(a, false);
+        continue; // fractured rock is hidden/inert until it respawns far away
+      }
+
+      a.mesh.position.z += a.speed*dt;
+      // slow random-walk on rotation speed so tumbling looks asymmetric/organic rather than uniform spin
+      a.rotSpeed.x += (Math.random()-0.5)*0.06*dt;
+      a.rotSpeed.y += (Math.random()-0.5)*0.06*dt;
+      a.rotSpeed.z += (Math.random()-0.5)*0.06*dt;
+      a.rotSpeed.clampLength(0, 0.8);
+      a.mesh.rotation.x += a.rotSpeed.x*dt;
+      a.mesh.rotation.y += a.rotSpeed.y*dt;
+      a.mesh.rotation.z += a.rotSpeed.z*dt;
+
+      if(a.mesh.position.z > DESPAWN_Z){
+        resetAsteroid(a, false);
+      } else {
+        const dist = camera.position.distanceTo(a.mesh.position);
+        // only consider asteroids roughly ahead, near the center reticle
+        const toRock = a.mesh.position.clone().sub(camera.position).normalize();
+        const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+        if(toRock.dot(fwd) > 0.9 && dist < nearest){
+          nearest = dist;
+        }
+
+        // --- collision check: asteroid close to camera in z AND within its physical radius in xy ---
+        const rockRadius = a.mesh.scale.x; // icosahedron base radius is 1
+        if(a.mesh.position.z > -rockRadius*2.2 && a.mesh.position.z < DESPAWN_Z + 6){
+          const dx = a.mesh.position.x - camera.position.x;
+          const dy = a.mesh.position.y - camera.position.y;
+          const lateralDist = Math.sqrt(dx*dx + dy*dy);
+          if(lateralDist < rockRadius + 2.2){
+            registerHit();
+            spawnFracture(a.mesh.position, rockRadius);
+            a.mesh.visible = false;
+            a.pendingRespawn = 1.1; // rock stays "destroyed" briefly before recycling far away
+          }
+        }
+      }
+    }
+    updateShards(dt);
+
+    // --- flash + shield regen ---
+    if(flashTimer > 0){
+      flashTimer -= dt;
+      hitFlashEl.classList.add('active');
+    } else {
+      hitFlashEl.classList.remove('active');
+    }
+    if(regenDelay > 0){
+      regenDelay -= dt;
+    } else if(shield < SHIELD_MAX){
+      shield = Math.min(SHIELD_MAX, shield + 14*dt);
+      shieldNumEl.textContent = Math.round(shield);
+      if(shield >= SHIELD_MAX*0.98){
+        shieldsDownEl.classList.remove('show');
+        shieldStatusEl.innerHTML = 'SHIELD MODULATION STATUS: <b>PRIMARY SYSTEM ACTIVE</b>';
+      }
+    }
+
+    updateHud(dt, isFinite(nearest) ? nearest : null);
+    if(shipIconSvg){
+      const bank = THREE.MathUtils.clamp(-shipVX*1.1, -22, 22);
+      const pitch = THREE.MathUtils.clamp(shipVY*0.6, -6, 6);
+      shipIconSvg.style.transform = `rotate(${bank}deg) translateY(${pitch}px)`;
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+})();
+</script>
+</body>
+</html>
