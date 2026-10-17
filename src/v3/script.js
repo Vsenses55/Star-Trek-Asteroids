@@ -506,6 +506,7 @@
   });
 
   const engageEl = $('engage');
+  let engageHideT = 0;
   const ov = { scoreLbl:$('ov-score-lbl'), score:$('ov-score'), title:$('ov-title'), sub:$('ov-sub'), btn:$('ov-btn-txt') };
   const NUM_WORDS = ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','TEN','ELEVEN','TWELVE',
     'THIRTEEN','FOURTEEN','FIFTEEN','SIXTEEN','SEVENTEEN','EIGHTEEN','NINETEEN','TWENTY'];
@@ -553,14 +554,16 @@
     ov.title.classList.toggle('cyan', !o.red);
     ov.sub.innerHTML = '<div class="l1">' + o.line1 + '</div><div class="l2">' + o.line2 + '</div>';
     ov.btn.textContent = o.button;
-    engageEl.hidden = false; stage.classList.add('overlay-on');
+    clearTimeout(engageHideT);
+    engageEl.hidden = false; void engageEl.offsetWidth; engageEl.classList.remove('out'); stage.classList.add('overlay-on');
   }
   function lockPointer(){
     try { const p = stage.requestPointerLock && stage.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch(e){}
   }
   function engage(){
     if (mission === 'lost') resetMission();
-    mission = 'flying'; engaged = true; paused = false; engageEl.hidden = true; stage.classList.remove('overlay-on');
+    mission = 'flying'; engaged = true; paused = false; stage.classList.remove('overlay-on');
+    engageEl.classList.add('out'); clearTimeout(engageHideT); engageHideT = setTimeout(() => { if (!paused) engageEl.hidden = true; }, 460);
     try { window.focus(); stage.focus({ preventScroll:true }); } catch(e){}
     lockPointer(); audio(); clock.getDelta();
   }
@@ -935,11 +938,15 @@
   applyRockStyle();
   startWave(1);
 
+  let idleAmt = 1;
   function animate(){
     requestAnimationFrame(animate);
-    let dt = Math.min(clock.getDelta(), 0.1);
-    if (paused) dt = 0;
-    camT += dt;
+    // rawDt keeps running behind the start / pause screens so the scene stays alive (planet spin, star drift,
+    // rock tumble, camera sway); gameplay uses dt, which is 0 while paused. Nothing jumps when you resume.
+    const rawDt = Math.min(clock.getDelta(), 0.1);
+    let dt = paused ? 0 : rawDt;
+    camT += rawDt;
+    idleAmt += ((paused ? 1 : 0) - idleAmt) * Math.min(1, rawDt * 1.4); // eases in behind overlays, out on resume
     const flying = mission === 'flying' && !paused;
 
     // --- turning: mouse (pointer lock) or ← → keys
@@ -980,13 +987,15 @@
     camera.position.copy(ship.pos);
     camera.position.y += Math.cos(camT*0.22)*0.8 + shakeY;
     camera.position.addScaledVector(right, Math.sin(camT*0.3)*0.8 + shakeX);
-    camera.rotation.set(-ship.vy*0.004, ship.yaw + (keys.rear ? Math.PI : 0),
+    camera.rotation.set(-ship.vy*0.004 + Math.sin(camT*0.09)*0.025*idleAmt,
+      ship.yaw + (keys.rear ? Math.PI : 0) + Math.sin(camT*0.06)*0.09*idleAmt, // slow look-around behind overlays
       Math.sin(camT*0.18)*0.015 - ship.strafeV*0.008 - clamp(turnFeel, -2.5, 2.5)*0.05);
     const fov = 58 + thrustAmt*8 - brakeAmt*3;
     if (Math.abs(camera.fov - fov) > 0.01){ camera.fov = fov; camera.updateProjectionMatrix(); }
     camera.updateMatrixWorld();
     sky.position.copy(camera.position);
-    updatePlanets(dt);
+    sky.rotation.y += rawDt * 0.0035; // distant stars wheel very slowly, always
+    updatePlanets(rawDt);
     updateDust(camera.position, shipVel, clamp((shipVel.length() - 30) / 40, 0, 1) * (0.4 + 0.6*thrustAmt));
 
     // --- rocks
@@ -1023,7 +1032,7 @@
       p.addScaledVector(k.vel, dt);
       if (Math.abs(p.y) > ALT_BAND){ p.y = Math.sign(p.y)*ALT_BAND; k.vel.y *= -1; }
       p.x = wrapNear(p.x, ship.pos.x, SECTOR); p.z = wrapNear(p.z, ship.pos.z, SECTOR);
-      k.mesh.rotation.x += k.rot.x*dt; k.mesh.rotation.y += k.rot.y*dt; k.mesh.rotation.z += k.rot.z*dt;
+      k.mesh.rotation.x += k.rot.x*rawDt; k.mesh.rotation.y += k.rot.y*rawDt; k.mesh.rotation.z += k.rot.z*rawDt; // tumble never stops
 
       _rel.subVectors(p, ship.pos);
       const dist = _rel.length();

@@ -177,7 +177,10 @@
   #warning.info{ color:#fff; text-shadow:0 0 10px rgba(255,255,255,.55), 0 0 22px rgba(11,213,237,.35); }
   /* ---------- overlay screens (Figma "Gamescreen Overlay", node 2275:11) ---------- */
   #engage{ position:absolute; inset:0; background:rgba(0,4,8,.74); cursor:pointer; }
-  #stage #hud{ transition:opacity .25s; }
+  #stage #hud{ transition:opacity .45s ease; }
+  /* overlay fades in/out instead of popping, so pause ⇄ play feels continuous */
+  #engage{ transition:opacity .45s ease; }
+  #engage.out{ opacity:0; pointer-events:none; }
   #stage.overlay-on #hud{ opacity:0; }
   #engage .ov{ position:absolute; white-space:nowrap; }
   #ov-score-lbl{ left:50%; top:108px; transform:translateX(-50%); font-family:var(--f-ext); font-weight:var(--ext-w);
@@ -189,17 +192,49 @@
   #ov-sub{ left:50%; top:475px; transform:translateX(-50%); text-align:center; font-family:var(--f-num); font-weight:500;
     font-size:24px; line-height:30px; text-box:trim-both cap alphabetic; }
   #ov-sub .l1{ color:#fff; } #ov-sub .l2{ color:var(--cyan); }
-  #ov-btn{ left:692px; top:584px; width:537.52px; height:120.96px; display:flex; align-items:center; justify-content:center;
-    border-radius:63.36px; background:rgba(0,0,0,.6);
-    box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 22px rgba(11,213,237,.25);
-    font-family:var(--f-num); font-weight:800; font-size:36px; color:#fff; transition:box-shadow .2s, transform .2s; }
-  /* gradient ring drawn on a masked pseudo-element so the button's see-through fill stays dark */
-  #ov-btn::before{ content:""; position:absolute; inset:0; border-radius:inherit; padding:8.64px;
-    background:linear-gradient(90deg, #ffffff 0%, var(--ice) 35%, var(--cyan) 100%);
+  /* CLICK TO … button — Figma "Gamescreen Overlay" › Meter (2276:979): 532.24×120.96 at 694.64,584, r63.36, 6px ring
+     (pale ice → cyan), rgba(0,0,0,.6) fill, inner glow 0 0 20px 10px rgba(137,230,241,.6), Orbitron ExtraBold 36 white.
+     Motion (ours): idle = slow breathing glow + a light glint that circles the ring + a scan sweep across the face;
+     hover = ring brightens, glow widens, chevrons slide in, glint speeds up; press = quick dip. */
+  @property --glint{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
+  #ov-btn{ left:694.64px; top:584px; width:532.24px; height:120.96px; display:flex; align-items:center; justify-content:center;
+    border-radius:63.36px; background:rgba(0,0,0,.6); overflow:hidden;
+    box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 18px rgba(11,213,237,.22);
+    font-family:var(--f-num); font-weight:800; font-size:36px; color:#fff; letter-spacing:0;
+    transition:box-shadow .3s, transform .15s, letter-spacing .3s; animation:btnBreathe 3.2s ease-in-out infinite; }
+  /* ring: base gradient + a bright glint that travels around it (conic, angle animated) */
+  #ov-btn::before{ content:""; position:absolute; inset:0; border-radius:inherit; padding:6px; z-index:2;
+    background:conic-gradient(from var(--glint), rgba(255,255,255,0) 0deg, rgba(255,255,255,.95) 18deg, rgba(255,255,255,0) 40deg, rgba(255,255,255,0) 360deg),
+               linear-gradient(90deg, #d1faff 0%, #9adde5 40%, var(--cyan) 100%);
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
-  #ov-btn span{ text-box:trim-both cap alphabetic; line-height:1; }
-  #engage:hover #ov-btn{ box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 34px rgba(11,213,237,.5); }
+    -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation:btnGlint 6s linear infinite; }
+  /* inner glow + scan sweep across the face */
+  #ov-btn::after{ content:""; position:absolute; inset:0; border-radius:inherit; z-index:1; pointer-events:none;
+    box-shadow:inset 0 0 20px 10px rgba(137,230,241,.6);
+    background:linear-gradient(100deg, transparent 0%, transparent 42%, rgba(209,250,255,.16) 50%, transparent 58%, transparent 100%) no-repeat;
+    background-size:220% 100%; background-position:160% 0; animation:btnSweep 4.8s ease-in-out infinite 1.2s; }
+  #ov-btn span{ position:relative; z-index:3; text-box:trim-both cap alphabetic; line-height:1; text-shadow:0 0 0 rgba(209,250,255,0); transition:text-shadow .3s; }
+  #ov-btn .chev{ position:relative; z-index:3; width:0; height:22px; opacity:0; overflow:visible; transition:opacity .25s, transform .3s; }
+  #ov-btn .chev::before{ content:""; position:absolute; top:0; width:14px; height:22px; background:var(--cyan);
+    clip-path:polygon(0 0, 45% 0, 100% 50%, 45% 100%, 0 100%, 55% 50%); filter:drop-shadow(0 0 4px var(--cyan)); }
+  #ov-btn .chev.l{ transform:translateX(-30px); } #ov-btn .chev.l::before{ right:22px; }
+  #ov-btn .chev.r{ transform:translateX(30px) scaleX(-1); } #ov-btn .chev.r::before{ right:22px; }
+  #ov-btn:hover{ box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 30px rgba(11,213,237,.55), 0 0 70px rgba(11,213,237,.2);
+    letter-spacing:.04em; animation:none; }
+  #ov-btn:hover::before{ animation-duration:1.6s; filter:brightness(1.25); }
+  #ov-btn:hover::after{ animation-duration:1.8s; animation-delay:0s; box-shadow:inset 0 0 24px 12px rgba(137,230,241,.75); }
+  #ov-btn:hover span{ text-shadow:0 0 12px rgba(209,250,255,.7); }
+  #ov-btn:hover .chev{ opacity:1; }
+  #ov-btn:hover .chev.l{ transform:translateX(-6px); animation:chevL 1s ease-in-out infinite .3s; }
+  #ov-btn:hover .chev.r{ transform:translateX(6px) scaleX(-1); animation:chevR 1s ease-in-out infinite .3s; }
+  #ov-btn:active{ transform:scale(.975); box-shadow:0 0 50px rgba(209,250,255,.7); }
+  @keyframes btnBreathe{ 50%{ box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 30px rgba(11,213,237,.42); } }
+  @keyframes btnGlint{ to{ --glint:360deg; } }
+  @keyframes btnSweep{ 0%{ background-position:160% 0; } 45%,100%{ background-position:-60% 0; } }
+  @keyframes chevL{ 50%{ transform:translateX(-12px); } }
+  @keyframes chevR{ 50%{ transform:translateX(12px) scaleX(-1); } }
+  @media (prefers-reduced-motion: reduce){ #ov-btn, #ov-btn::before, #ov-btn::after, #ov-btn .chev{ animation:none !important; } }
   #ov-keys{ left:230px; top:785px; width:1460px; height:172px; display:flex; align-items:center; justify-content:center; gap:80px;
     padding:48px 64px; border:1px solid #253b3d; border-radius:8px; background:rgba(4,71,96,.1);
     box-shadow:inset 4px 0 0 #0bd5ed, inset -4px 0 0 #0bd5ed; }
@@ -313,11 +348,11 @@
   </div>
   <div id="phaser-flash"></div>
   <div id="engage" role="button" aria-label="Start game">
-    <div class="ov" id="ov-score-lbl" hidden>SCORE</div>
-    <div class="ov num trim" id="ov-score" hidden>0</div>
+    <div class="ov" id="ov-score-lbl">SCORE</div>
+    <div class="ov num trim" id="ov-score">0</div>
     <div class="ov cyan" id="ov-title">ROUND ONE</div>
     <div class="ov" id="ov-sub"><div class="l1">THE ASTEROIDS ARE COMING FOR YOU</div><div class="l2">CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER</div></div>
-    <div class="ov" id="ov-btn"><span id="ov-btn-txt">CLICK TO ENGAGE</span></div>
+    <div class="ov" id="ov-btn"><i class="chev l"></i><span id="ov-btn-txt">CLICK TO ENGAGE</span><i class="chev r"></i></div>
     <div class="ov" id="ov-keys">
       <div class="k"><i>DODGE</i><b>WASD</b></div><div class="div"></div>
       <div class="k"><i>TURN</i><b>L / R</b></div><div class="div"></div>
