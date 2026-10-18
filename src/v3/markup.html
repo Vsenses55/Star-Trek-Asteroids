@@ -195,13 +195,13 @@
   /* CLICK TO … button — Figma "Gamescreen Overlay" › Meter (2276:979): 532.24×120.96 at 694.64,584, r63.36, 6px ring
      (pale ice → cyan), rgba(0,0,0,.6) fill, inner glow 0 0 20px 10px rgba(137,230,241,.6), Orbitron ExtraBold 36 white.
      Motion (ours): idle = slow breathing glow + a light glint that circles the ring + a scan sweep across the face;
-     hover = ring brightens, glow widens, glint speeds up; press = quick dip. */
+     hover = ring brightens, glow widens, glint speeds up (text doesn't move); press = quick dip. */
   @property --glint{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
   #ov-btn{ left:694.64px; top:584px; width:532.24px; height:120.96px; display:flex; align-items:center; justify-content:center;
     border-radius:63.36px; background:rgba(0,0,0,.6); overflow:hidden;
     box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 18px rgba(11,213,237,.22);
     font-family:var(--f-num); font-weight:800; font-size:36px; color:#fff; letter-spacing:0;
-    transition:box-shadow .3s, transform .15s, letter-spacing .3s; animation:btnBreathe 3.2s ease-in-out infinite; }
+    transition:box-shadow .3s, transform .15s; animation:btnBreathe 3.2s ease-in-out infinite; }
   /* ring: base gradient + a bright glint that travels around it (conic, angle animated) */
   #ov-btn::before{ content:""; position:absolute; inset:0; border-radius:inherit; padding:6px; z-index:2;
     background:conic-gradient(from var(--glint), rgba(255,255,255,0) 0deg, rgba(255,255,255,.95) 18deg, rgba(255,255,255,0) 40deg, rgba(255,255,255,0) 360deg),
@@ -216,7 +216,7 @@
     background-size:220% 100%; background-position:160% 0; animation:btnSweep 4.8s ease-in-out infinite 1.2s; }
   #ov-btn span{ position:relative; z-index:3; text-box:trim-both cap alphabetic; line-height:1; text-shadow:0 0 0 rgba(209,250,255,0); transition:text-shadow .3s; }
   #ov-btn:hover{ box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 30px rgba(11,213,237,.55), 0 0 70px rgba(11,213,237,.2);
-    letter-spacing:.04em; animation:none; }
+    animation:none; } /* hover = glow only; the label stays put */
   #ov-btn:hover::before{ animation-duration:1.6s; filter:brightness(1.25); }
   #ov-btn:hover::after{ animation-duration:1.8s; animation-delay:0s; box-shadow:inset 0 0 24px 12px rgba(137,230,241,.75); }
   #ov-btn:hover span{ text-shadow:0 0 12px rgba(209,250,255,.7); }
@@ -246,6 +246,30 @@
   #typetag{ right:60px; top:990px; font-family:var(--f-num); font-weight:500; font-size:10px; letter-spacing:1.5px; color:var(--ice); opacity:.6; white-space:nowrap; }
   #mute{ right:60px; top:1010px; font-family:var(--f-num); font-weight:500; font-size:10px; letter-spacing:1.5px; color:var(--cyan); opacity:.6; }
   @media (prefers-reduced-motion: reduce){ #warning.on, #warning.on.urgent{ animation:none; } }
+
+  /* ---------- time trial (new) ---------- */
+  /* the circular reticle competes with the circular gates, so it fades out in time trial (lock box still shows) */
+  #reticle{ transition:opacity .4s ease; }
+  #stage.mode-trial #reticle{ opacity:0; }
+  #warning.amber{ color:#ffc04a; text-shadow:0 0 10px rgba(255,192,74,.8); }
+  #advice.amber{ color:#ffc04a; }
+  .edge.gate{ border-bottom-color:var(--cyan); filter:drop-shadow(0 0 6px var(--cyan)); }
+  .edge.gate.amber{ border-bottom-color:#ffc04a; filter:drop-shadow(0 0 6px #ffc04a); }
+  /* label that rides above the next gate: number + range */
+  #gate-tag{ left:0; top:0; font-family:var(--f-num); font-weight:800; font-size:12px; letter-spacing:2px; color:var(--cyan);
+    text-shadow:0 0 6px rgba(11,213,237,.7); white-space:nowrap; opacity:0; transition:opacity .15s; }
+  #gate-tag.on{ opacity:1; }
+  #gate-tag.amber{ color:#ffc04a; text-shadow:0 0 6px rgba(255,192,74,.7); }
+  #gate-tag.finish{ color:#fff; text-shadow:0 0 6px rgba(209,250,255,.8); }
+  #gate-tag span{ font-weight:500; opacity:.8; margin-left:8px; }
+  /* mode picker on the start / results screens (temporary until the Figma mode-select overlay exists) */
+  #ov-mode{ left:50%; top:736px; transform:translateX(-50%); display:flex; align-items:center; gap:22px;
+    font-family:var(--f-num); font-weight:700; font-size:18px; letter-spacing:.14em; }
+  #ov-mode span{ color:rgba(11,213,237,.45); cursor:pointer; transition:color .2s, text-shadow .2s; }
+  #ov-mode span:hover{ color:var(--cyan); }
+  #ov-mode span.on{ color:#fff; text-shadow:0 0 10px rgba(209,250,255,.6); }
+  #ov-mode i{ font-style:normal; font-weight:800; font-size:13px; letter-spacing:0; color:var(--cyan);
+    border:1px solid rgba(11,213,237,.6); border-radius:4px; padding:5px 8px; line-height:1; }
 </style>
 
 <div id="viewport">
@@ -330,6 +354,7 @@
       <div id="radar-glow"></div>
     </div>
     <div class="abs" id="edges"></div>
+    <div class="abs" id="gate-tag"></div>
     <div class="abs" id="rear" hidden>REAR VIEW</div>
     <div class="abs" id="lock"><i></i><i></i><i></i><i></i><em>LOCK</em></div>
     <div class="abs" id="mute">SOUND ON</div>
@@ -342,6 +367,7 @@
     <div class="ov cyan" id="ov-title">ROUND ONE</div>
     <div class="ov" id="ov-sub"><div class="l1">THE ASTEROIDS ARE COMING FOR YOU</div><div class="l2">CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER</div></div>
     <div class="ov" id="ov-btn"><span id="ov-btn-txt">CLICK TO ENGAGE</span></div>
+    <div class="ov" id="ov-mode"><span data-mode="asteroids">ASTEROIDS</span><i>T</i><span data-mode="trial">TIME TRIAL</span></div>
     <div class="ov" id="ov-keys">
       <div class="k"><i>DODGE</i><b>WASD</b></div><div class="div"></div>
       <div class="k"><i>TURN</i><b>L / R</b></div><div class="div"></div>

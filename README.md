@@ -26,6 +26,22 @@ Single-file HTML + three.js — no install, no build step needed to play.
 - Hostile saucers show up from time to time and shoot back. One phaser hit takes them out.
 - The radar (top right) and the hint line under the alert slot tell you where the danger is and what to do.
 
+## Time Trial mode
+
+Pick **TIME TRIAL** on the start screen (click it, or press **T**). The choice is remembered.
+
+- Fly a fixed course of 20 gates through an asteroid field. Two rails of glowing arrows (from `Arrow.svg`) trace
+  the line; the stretch up to the next gate is lit, with pulses chasing toward it.
+- The clock starts at 15 s. Every clean gate adds time (about 3.8 s, capped at 40 s).
+- Miss a gate: −3 s (also added to your lap time), and the **next gate turns amber: a must-pass**.
+  Miss a must-pass (or the finish) and you have to turn back and fly through it. A clean pass clears the strike.
+- Rocks don't hunt you here; they're a fixed field around the course (the same every run). Hitting one still
+  drains shields, and phasers clear them.
+- The ship grips in turns (sideways drift bleeds off), so it follows its nose through the course.
+- HUD: the hint line calls the line (`GATE 4/20 · BEAR LEFT · CLIMB`), a tag over the next gate shows its range,
+  a cyan edge arrow points to it when it's off-screen, and the radar shows the course and the next gate.
+- Your best time is saved in the browser (`localStorage`) and shown on the start and results screens.
+
 ## Project layout
 
 ```

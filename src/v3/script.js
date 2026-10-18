@@ -189,7 +189,7 @@
   const SIZES = { 3:{ r:5.2, pts:20, dot:5.5 }, 2:{ r:2.7, pts:50, dot:4 }, 1:{ r:1.4, pts:100, dot:2.8 } };
   const SECTOR = 210;        // half-width of the wrapping sector (fly off one side, rocks come round the other)
   const ALT_BAND = 42;       // rocks drift within this height band, same as your vertical dodge range
-  const POOL = 72, rocks = [];
+  const POOL = 150, rocks = []; // asteroids mode uses up to ~70; the time-trial field uses ~120
   for (let i=0;i<POOL;i++){
     const mat = new THREE.MeshPhongMaterial({ color:ROCK_COLORS[i%3], flatShading:true, shininess:4, specular:0x0a1418, emissive:new THREE.Color(0x0b3a44), emissiveIntensity:0.1 });
     const mesh = new THREE.Mesh(rockGeos[i % rockGeos.length], mat); mesh.visible = false; scene.add(mesh);
@@ -483,6 +483,7 @@
   let mouseDX = 0, hadLock = false;
   window.addEventListener('keydown', e => {
     const k = keyMap[e.key] || codeMap[e.code];
+    if ((e.key === 't' || e.key === 'T') && (mission === 'ready' || mission === 'lost')){ setMode(gameMode === 'trial' ? 'asteroids' : 'trial'); return; }
     if (mission === 'ready' || (paused && mission === 'flying' && e.key !== 'Escape')) engage();
     else if (mission === 'lost' && e.key === 'Enter') engage();
     if (k){ keys[k] = true; e.preventDefault(); }
@@ -507,7 +508,31 @@
 
   const engageEl = $('engage');
   let engageHideT = 0;
-  const ov = { scoreLbl:$('ov-score-lbl'), score:$('ov-score'), title:$('ov-title'), sub:$('ov-sub'), btn:$('ov-btn-txt') };
+  const ov = { scoreLbl:$('ov-score-lbl'), score:$('ov-score'), title:$('ov-title'), sub:$('ov-sub'), btn:$('ov-btn-txt'), mode:$('ov-mode') };
+  // mode picker: click a mode (doesn't start the game) or press T
+  ov.mode.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    const m = e.target.dataset && e.target.dataset.mode;
+    setMode(m || (gameMode === 'trial' ? 'asteroids' : 'trial'));
+  });
+  function paintModes(){ for (const s of ov.mode.querySelectorAll('span')) s.classList.toggle('on', s.dataset.mode === gameMode); }
+  function setMode(m){
+    if (m === gameMode || (mission !== 'ready' && mission !== 'lost')) return;
+    gameMode = m;
+    try { localStorage.setItem('stta.mode', m); } catch(e){}
+    mission = 'ready'; resetMission(); showReady();
+  }
+  function showReady(){
+    if (gameMode === 'trial'){
+      const b = trialBest();
+      showOverlay({ scoreLabel:'BEST TIME', scoreText: b ? fmtTime(b) : null, title:'TIME TRIAL',
+        line1:'FLY THROUGH ' + GATE_N + ' GATES &nbsp;•&nbsp; FOLLOW THE ARROWS',
+        line2:'CLEAN GATES ADD TIME &nbsp;•&nbsp; MISS ONE AND THE NEXT IS A MUST-PASS', button:'CLICK TO ENGAGE', modes:true });
+    } else {
+      showOverlay({ score:0, title:'ROUND ONE', line1:'THE ASTEROIDS ARE COMING FOR YOU',
+        line2:'CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER', button:'CLICK TO ENGAGE', modes:true });
+    }
+  }
   const NUM_WORDS = ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','TEN','ELEVEN','TWELVE',
     'THIRTEEN','FOURTEEN','FIFTEEN','SIXTEEN','SEVENTEEN','EIGHTEEN','NINETEEN','TWENTY'];
   function numWord(n){ return NUM_WORDS[n] || String(n); }
@@ -547,9 +572,11 @@
     elm.innerHTML = h;
   }
   function showOverlay(o){
-    const showScore = o.score != null;
+    const showScore = o.score != null || o.scoreText != null;
     ov.scoreLbl.hidden = ov.score.hidden = !showScore;
-    if (showScore) setMono(ov.score, o.score.toLocaleString(), true);
+    ov.scoreLbl.textContent = o.scoreLabel || 'SCORE';
+    if (showScore) setMono(ov.score, o.scoreText != null ? o.scoreText : o.score.toLocaleString(), true);
+    ov.mode.hidden = !o.modes; paintModes();
     ov.title.textContent = o.title;
     ov.title.classList.toggle('cyan', !o.red);
     ov.sub.innerHTML = '<div class="l1">' + o.line1 + '</div><div class="l2">' + o.line2 + '</div>';
@@ -569,6 +596,15 @@
   }
   function pause(){
     paused = true; firing = false; for (const k in keys) keys[k] = false;
+    if (gameMode === 'trial'){
+      const n = Math.min(trial.next + 1, GATE_N);
+      showOverlay({ scoreLabel:'LAP TIME', scoreText:fmtTime(trial.lap + trial.penalty), title:'PAUSED',
+        line1:'GATE ' + n + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + fmtTime(Math.max(0, trial.left)) + ' LEFT',
+        line2: trial.goBack ? 'FLY BACK THROUGH GATE ' + n : trial.mustPass ? 'GATE ' + n + ' IS A MUST-PASS' : 'CLEAN GATES ADD TIME',
+        button:'CLICK TO RESUME' });
+      if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
+      return;
+    }
     const hl = hitsLeft();
     showOverlay({ score, title:'PAUSED', line1:'ROUND ' + numWord(wave) + ' &nbsp;•&nbsp; ' + fmtTime(waveTime) + ' LEFT',
       line2: waveBreak > 0 ? 'ROUND ' + numWord(wave+1) + ' INCOMING' : hl + (hl === 1 ? ' HIT' : ' HITS') + ' TO CLEAR', button:'CLICK TO RESUME' });
@@ -786,7 +822,7 @@
       score += SIZES[size].pts * (thrustAmt > 0.5 ? 2 : 1); // kills while thrusting count double
     }
     sfxBoom(size === 3);
-    if (size > 1){
+    if (size > 1 && gameMode === 'asteroids'){
       // classic split: two smaller rocks peel off at right angles to the parent's path
       const side = new THREE.Vector3(-vel.z, 0, vel.x);
       if (side.lengthSq() < 0.01) side.set(1, 0, 0);
@@ -849,8 +885,13 @@
     for (const k in keys) keys[k] = false;
     if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
     // only mention rounds cleared when there were some, so a failure never reads like an achievement
+    if (gameMode === 'trial'){
+      showOverlay({ scoreLabel:'BEST TIME', scoreText: trialBest() ? fmtTime(trialBest()) : null, title:'MISSION FAILED', red:true, line1:reason,
+        line2:'GATE ' + Math.min(trial.next + 1, GATE_N) + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + trial.clean + ' CLEAN', button:'CLICK TO TRY AGAIN', modes:true });
+      return;
+    }
     const cleared = wavesCleared > 0 ? ' &nbsp;•&nbsp; ' + wavesCleared + (wavesCleared === 1 ? ' ROUND' : ' ROUNDS') + ' CLEARED' : '';
-    showOverlay({ score, title:'MISSION FAILED', red:true, line1:reason, line2:'ROUND ' + numWord(wave) + cleared, button:'CLICK TO TRY AGAIN' });
+    showOverlay({ score, title:'MISSION FAILED', red:true, line1:reason, line2:'ROUND ' + numWord(wave) + cleared, button:'CLICK TO TRY AGAIN', modes:true });
   }
 
   function resetMission(){
@@ -862,8 +903,10 @@
     wave = 1; wavesCleared = 0; waveBreak = 0; lockTarget = null; litShown = -1;
     for (const sc of saucers) removeSaucer(sc);
     for (const b of bolts){ b.life = 0; b.sp.visible = false; }
-    saucerTimer = 35; saucerAlert = 0;
-    startWave(1);
+    saucerAlert = 0; advText = ''; advPri = 99; advHold = 0;
+    setTrialVisible(gameMode === 'trial');
+    if (gameMode === 'trial'){ saucerTimer = Infinity; startTrial(); }
+    else { saucerTimer = 35; startWave(1); }
   }
 
   function fire(){
@@ -881,6 +924,368 @@
     }
     el.pflash.classList.add('on'); setTimeout(() => el.pflash.classList.remove('on'), 90);
     sfxPhaser();
+  }
+
+  // ---------------------------------------------------------------
+  // TIME TRIAL — a fixed course of gates through the field, flown against the clock
+  //   • the course is a spline; gates sit along it and two rails of arrows (Orlando's Arrow.svg) trace it
+  //   • clean gate = time added. Miss one = time penalty, and the NEXT gate becomes a must-pass (amber).
+  //     Miss a must-pass (or the finish) and you have to turn back and fly through it.
+  //   • rocks don't hunt you here: they're a fixed obstacle field around the line, the same every run
+  // ---------------------------------------------------------------
+  let gameMode = 'asteroids';
+  try { if (localStorage.getItem('stta.mode') === 'trial') gameMode = 'trial'; } catch(e){}
+  const TEAL = new THREE.Color(0x0bd5ed), AMBER = new THREE.Color(0xffc04a), RED = new THREE.Color(0xfc4340), ICE = new THREE.Color(0xd1faff);
+  const GATE_N = 20, GATE_R = 11;
+  const TRIAL_START = 15, TRIAL_CAP = 40, PACE = 46, MISS_PEN = 3, TRIAL_GRIP = 2.2;
+  const ZERO = new THREE.Vector3(), _zAxis = new THREE.Vector3(0,0,1), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3();
+  const _cTan = new THREE.Vector3(), _cRight = new THREE.Vector3(), _cUp = new THREE.Vector3(), _col = new THREE.Color();
+  const trialGroup = new THREE.Group(); scene.add(trialGroup);
+
+  // the course: starts where the ship spawns, heading forward, and winds round the sector (altitude stays inside ±20)
+  const course = new THREE.CatmullRomCurve3([
+    [0,0,0],[0,0,-180],[60,6,-380],[220,14,-520],[420,8,-540],[580,-6,-420],[640,-18,-220],[560,-10,-20],
+    [380,6,80],[200,20,40],[60,12,180],[-60,-4,360],[-260,-16,420],[-440,-8,300],[-500,8,80],[-420,18,-120],
+    [-260,6,-200],[-180,0,-320]
+  ].map(p => new THREE.Vector3(p[0], p[1], p[2])), false, 'centripetal');
+  const COURSE_L = course.getLength();
+  const NS = Math.ceil(COURSE_L / 4), samples = new Float32Array((NS+1)*3);
+  course.getSpacedPoints(NS).forEach((p, i) => { samples[i*3] = p.x; samples[i*3+1] = p.y; samples[i*3+2] = p.z; });
+  function courseFrame(u, pos, tan, rt, up){
+    const t = clamp(u / COURSE_L, 0, 1);
+    course.getPointAt(t, pos); course.getTangentAt(t, tan).normalize();
+    rt.crossVectors(tan, _up).normalize(); up.crossVectors(rt, tan).normalize();
+  }
+  function minCourseDist(p){
+    let best = Infinity;
+    for (let i=0;i<=NS;i+=2){
+      const dx = samples[i*3]-p.x, dy = samples[i*3+1]-p.y, dz = samples[i*3+2]-p.z, d = dx*dx+dy*dy+dz*dz;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  }
+
+  // --- gates: line-art rings (thin ring + soft halo + ticks), facing along the course
+  const gateTorus = new THREE.TorusGeometry(GATE_R, 0.3, 6, 72);
+  const gateHalo = new THREE.TorusGeometry(GATE_R, 1.2, 8, 72);
+  function tickGeo(n, r0, r1){
+    const p = [];
+    for (let i=0;i<n;i++){ const a = i/n*Math.PI*2, c = Math.cos(a), s = Math.sin(a); p.push(c*r0, s*r0, 0, c*r1, s*r1, 0); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); return g;
+  }
+  const gateTicks = tickGeo(12, GATE_R + 0.8, GATE_R + 2.6), finishTicks = tickGeo(32, GATE_R + 0.8, GATE_R + 3.4);
+  const gates = [];
+  for (let i=0;i<GATE_N;i++){
+    const u = COURSE_L * (i+1) / GATE_N;
+    const pos = course.getPointAt(u / COURSE_L), n = course.getTangentAt(u / COURSE_L).normalize();
+    const add = { transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false }; // range fade is done by hand below
+    const ring = new THREE.Mesh(gateTorus, new THREE.MeshBasicMaterial(Object.assign({ color:TEAL }, add)));
+    const halo = new THREE.Mesh(gateHalo, new THREE.MeshBasicMaterial(Object.assign({ color:TEAL, opacity:0.2 }, add)));
+    const ticks = new THREE.LineSegments(i === GATE_N-1 ? finishTicks : gateTicks, new THREE.LineBasicMaterial(Object.assign({ color:TEAL }, add)));
+    const grp = new THREE.Group(); grp.add(halo); grp.add(ring); grp.add(ticks);
+    grp.position.copy(pos); grp.quaternion.setFromUnitVectors(_zAxis, n);
+    trialGroup.add(grp);
+    gates.push({ u, pos, n, grp, ring, halo, ticks, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
+  }
+
+  // --- arrow rails, built from Orlando's Arrow.svg (viewBox 164.6 × 152.2): the triangle plus the accent stroke
+  //     that runs parallel to its left edge. They lie flat just below the racing line, tip pointing down-course,
+  //     and the right rail is mirrored so the accent stroke is always on the outside.
+  const ARROW_GAP = 10, RAIL_X = 12.5, RAIL_Y = 4.5, ARROW_LEN = 2.8;
+  function arrowGeometry(mirror){
+    const s = ARROW_LEN / 152.2, cx = 88.3, cy = 76.1, m = mirror ? -1 : 1;
+    const P = (x, y) => new THREE.Vector2((x - cx) * s * m, (cy - y) * s);
+    const tri = new THREE.Shape([P(88.3,0), P(164.6,152.2), P(12,152.2)]);
+    const acc = new THREE.Shape([P(0,152.2), P(76.3,0), P(81.3,0), P(5,152.2)]); // the 1px stroke, given a width that reads in 3D
+    const g = new THREE.ShapeGeometry([tri, acc]);
+    g.rotateX(-Math.PI/2); // lie flat: tip → -Z (forward), face → +Y
+    return g;
+  }
+  const arrowGlowTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d'), g = x.createRadialGradient(32,32,0,32,32,32);
+    g.addColorStop(0,'rgba(255,255,255,0.9)'); g.addColorStop(0.4,'rgba(255,255,255,0.3)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
+  })();
+  const railU = [];
+  for (let u = ARROW_GAP*0.5; u < COURSE_L; u += ARROW_GAP) railU.push(u);
+  const RN = railU.length;
+  const arrowMat = new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false });
+  const railL = new THREE.InstancedMesh(arrowGeometry(false), arrowMat, RN);
+  const railR = new THREE.InstancedMesh(arrowGeometry(true), arrowMat, RN);
+  const haloGeo = new THREE.PlaneGeometry(ARROW_LEN*2.4, ARROW_LEN*3.4); haloGeo.rotateX(-Math.PI/2);
+  const railGlow = new THREE.InstancedMesh(haloGeo, new THREE.MeshBasicMaterial({ map:arrowGlowTex, color:0xffffff, transparent:true, opacity:0.5,
+    blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide }), RN*2);
+  {
+    const m = new THREE.Matrix4(), p = new THREE.Vector3(), back = new THREE.Vector3();
+    railU.forEach((u, i) => {
+      courseFrame(u, p, _cTan, _cRight, _cUp);
+      back.copy(_cTan).negate();
+      m.makeBasis(_cRight, _cUp, back);
+      for (const side of [-1, 1]){
+        _t1.copy(p).addScaledVector(_cRight, side*RAIL_X).addScaledVector(_cUp, -RAIL_Y);
+        m.setPosition(_t1);
+        (side < 0 ? railL : railR).setMatrixAt(i, m);
+        railGlow.setMatrixAt(i*2 + (side < 0 ? 0 : 1), m);
+      }
+      railL.setColorAt(i, TEAL); railR.setColorAt(i, TEAL); railGlow.setColorAt(i*2, TEAL); railGlow.setColorAt(i*2+1, TEAL);
+    });
+  }
+  for (const r of [railGlow, railL, railR]){ r.frustumCulled = false; trialGroup.add(r); }
+
+  // --- trial state
+  const trial = { next:0, mustPass:false, goBack:false, left:TRIAL_START, lap:0, penalty:0, clean:0, missed:0,
+    passNote:0, missNote:0, lastBonus:0, lastGate:0, prevS:[0,0], shipU:0, shipIdx:0, offCourse:false };
+  function trialBest(){ try { const v = parseFloat(localStorage.getItem('stta.trial.best')); return v > 0 ? v : null; } catch(e){ return null; } }
+  function saveBest(v){ try { localStorage.setItem('stta.trial.best', String(v)); } catch(e){} }
+  function mulberry32(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+  function placeTrialRocks(){
+    const rng = mulberry32(1701); // fixed layout, so best times compare fairly
+    const p = new THREE.Vector3(), placed = [];
+    const clear = (q, r) => placed.every(k => k.mesh.position.distanceTo(q) > k.r + r + 3);
+    const nearGate = q => gates.some(g => g.pos.distanceTo(q) < GATE_R + 16);
+    // scenery: big rocks lining the course, always outside the gate radius
+    for (let tries = 0, n = 0; n < 95 && tries < 3000; tries++){
+      const size = rng() < 0.55 ? 3 : 2, r = SIZES[size].r;
+      const u = rng() * COURSE_L, d = GATE_R + r + 5 + rng()*55, a = rng() * Math.PI * 2;
+      courseFrame(u, p, _cTan, _cRight, _cUp);
+      p.addScaledVector(_cRight, Math.cos(a)*d).addScaledVector(_cUp, Math.sin(a)*d*0.6);
+      if (Math.abs(p.y) > ALT_BAND || minCourseDist(p) < GATE_R + r + 3 || !clear(p, r)) continue;
+      const k = spawnRock(size, p, ZERO); if (k){ placed.push(k); n++; }
+    }
+    // hazards: smaller rocks sitting on the racing line between gates (not in the first stretch) — dodge or shoot
+    for (let tries = 0, n = 0; n < 26 && tries < 2000; tries++){
+      const size = rng() < 0.6 ? 1 : 2, r = SIZES[size].r;
+      const u = COURSE_L / GATE_N + rng() * COURSE_L * (GATE_N - 1) / GATE_N, d = rng()*7, a = rng() * Math.PI * 2;
+      courseFrame(u, p, _cTan, _cRight, _cUp);
+      p.addScaledVector(_cRight, Math.cos(a)*d).addScaledVector(_cUp, Math.sin(a)*d);
+      if (nearGate(p) || !clear(p, r + 6)) continue;
+      const k = spawnRock(size, p, ZERO); if (k){ placed.push(k); n++; }
+    }
+    for (const k of rocks) if (k.active) k.rot.multiplyScalar(0.5); // slower tumble, they're scenery
+  }
+
+  function startTrial(){
+    Object.assign(trial, { next:0, mustPass:false, goBack:false, left:TRIAL_START, lap:0, penalty:0, clean:0, missed:0,
+      passNote:0, missNote:0, lastBonus:0, lastGate:0, shipU:0, shipIdx:0, offCourse:false });
+    for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.grp.visible = true; g.grp.scale.setScalar(1); }
+    courseFrame(0, ship.pos, _cTan, _cRight, _cUp);
+    ship.yaw = Math.atan2(-_cTan.x, -_cTan.z);
+    placeTrialRocks();
+    resetGateSides();
+  }
+  function setTrialVisible(on){ trialGroup.visible = on; stage.classList.toggle('mode-trial', on); }
+
+  function gateSide(i){ return _t1.subVectors(ship.pos, gates[i].pos).dot(gates[i].n); }
+  function gateRadial(i){ const g = gates[i]; _t1.subVectors(ship.pos, g.pos); _t1.addScaledVector(g.n, -_t1.dot(g.n)); return _t1.length(); }
+  function resetGateSides(){
+    trial.prevS[0] = trial.next < GATE_N ? gateSide(trial.next) : 0;
+    trial.prevS[1] = trial.next + 1 < GATE_N ? gateSide(trial.next + 1) : 0;
+  }
+  function passGate(i){
+    const g = gates[i];
+    g.state = 'passed'; g.fade = 0.6;
+    trial.clean++; trial.lastGate = i + 1;
+    trial.mustPass = false; trial.goBack = false;
+    trial.next = i + 1;
+    if (trial.next >= GATE_N){ finishTrial(); return; }
+    const bonus = g.len / PACE;
+    trial.left = Math.min(TRIAL_CAP, trial.left + bonus); trial.lastBonus = bonus; trial.passNote = 1.6; trial.missNote = 0;
+    timeBump = 0.5;
+    sfxGate(false);
+  }
+  function missGate(i){
+    const g = gates[i];
+    if (trial.mustPass || g.finish){
+      // a must-pass can't be skipped: turn back and fly through it
+      trial.goBack = true; trial.missNote = 0; trial.passNote = 0;
+      sfxMiss();
+      return;
+    }
+    g.state = 'missed'; g.fade = 0.9;
+    trial.missed++; trial.left -= MISS_PEN; trial.penalty += MISS_PEN; trial.missNote = 2.2; trial.passNote = 0;
+    trial.next = i + 1; trial.mustPass = true;
+    sfxMiss();
+  }
+  function checkGates(){
+    for (let c = 0; c < 2; c++){
+      const i = trial.next + c;
+      if (i >= GATE_N || (c === 1 && trial.mustPass)) break;
+      const s = gateSide(i), prev = trial.prevS[c];
+      trial.prevS[c] = s;
+      if (prev < 0 && s >= 0){
+        const r = gateRadial(i);
+        if (r > 120) continue; // crossed the gate's plane somewhere else on the map — ignore
+        if (c === 1) missGate(trial.next); // flew past the next gate and through the one after it
+        if (mission !== 'flying') return;
+        if (r <= GATE_R) passGate(i);
+        else if (c === 0) missGate(i);
+        if (mission === 'flying') resetGateSides();
+        return;
+      }
+    }
+  }
+  function trackShip(){
+    const p = ship.pos;
+    let best = Infinity, bi = trial.shipIdx;
+    const scan = (lo, hi) => {
+      for (let i=lo;i<=hi;i++){
+        const dx = samples[i*3]-p.x, dy = samples[i*3+1]-p.y, dz = samples[i*3+2]-p.z, d = dx*dx+dy*dy+dz*dz;
+        if (d < best){ best = d; bi = i; }
+      }
+    };
+    scan(Math.max(0, trial.shipIdx - 50), Math.min(NS, trial.shipIdx + 50));
+    if (best > 80*80) scan(0, NS);
+    trial.shipIdx = bi; trial.shipU = bi * COURSE_L / NS; trial.offCourse = best > 45*45;
+  }
+  function updateTrial(dt){
+    trial.lap += dt; trial.left -= dt;
+    if (trial.passNote > 0) trial.passNote -= dt;
+    if (trial.missNote > 0) trial.missNote -= dt;
+    checkGates();
+    if (mission !== 'flying') return;
+    if (trial.left <= 0){ trial.left = 0; endMission('OUT OF TIME'); }
+  }
+
+  // rails: the stretch from you to the next gate is lit, with light pulses chasing down-course;
+  // the next couple of gaps glow faintly, the rest of the course is barely there. Amber while a must-pass is up.
+  function railPulse(u, t){ return Math.pow(Math.max(0, Math.sin(u*0.045 - t*7)), 10); }
+  function updateTrialVisuals(rawDt, t){
+    const next = Math.min(trial.next, GATE_N - 1), gU = gates[next].u, sU = trial.shipU;
+    const base = (trial.mustPass || trial.goBack) ? AMBER : TEAL;
+    for (let i=0;i<RN;i++){
+      const u = railU[i];
+      let b;
+      if (trial.goBack) b = (u > gU - 30 && u < sU + 20) ? 0.35 + 0.65*railPulse(-u, t) : 0.04; // pulses run back to the gate
+      else if (u < sU - 6) b = 0.03;
+      else if (u <= gU + 4) b = 0.4 + 0.6*railPulse(u, t);
+      else if (u <= gU + 2*COURSE_L/GATE_N) b = 0.16;
+      else b = 0.07;
+      b *= clamp((u - sU + 4) / 34, 0.18, 1); // the arrows right under you fade out, like the reference render
+      _col.copy(base).multiplyScalar(b);
+      railL.setColorAt(i, _col); railR.setColorAt(i, _col);
+      _col.multiplyScalar(0.6);
+      railGlow.setColorAt(i*2, _col); railGlow.setColorAt(i*2+1, _col);
+    }
+    railL.instanceColor.needsUpdate = railR.instanceColor.needsUpdate = railGlow.instanceColor.needsUpdate = true;
+
+    for (let i=0;i<GATE_N;i++){
+      const g = gates[i];
+      if (g.state !== 'ahead'){
+        if (g.fade <= 0){ g.grp.visible = false; continue; }
+        g.fade -= rawDt;
+        const k = Math.max(0, g.fade / (g.state === 'missed' ? 0.9 : 0.6));
+        const c = g.state === 'missed' ? RED : ICE;
+        g.ring.material.color.copy(c); g.halo.material.color.copy(c); g.ticks.material.color.copy(c);
+        g.ring.material.opacity = k; g.halo.material.opacity = 0.5*k; g.ticks.material.opacity = k;
+        g.grp.scale.setScalar(1 + (1-k)*(g.state === 'missed' ? 0.1 : 0.4));
+        continue;
+      }
+      const isNext = i === trial.next;
+      const far = clamp(1.25 - ship.pos.distanceTo(g.pos) / 520, 0.12, 1);
+      const c = isNext && (trial.mustPass || trial.goBack) ? AMBER : g.finish ? ICE : TEAL;
+      g.ring.material.color.copy(c); g.halo.material.color.copy(c); g.ticks.material.color.copy(c);
+      if (isNext){
+        const pulse = 0.75 + 0.25*Math.sin(t*6);
+        g.ring.material.opacity = Math.max(0.7, far); g.halo.material.opacity = 0.35*pulse; g.ticks.material.opacity = 0.9;
+        g.ticks.rotation.z += rawDt * 0.6;
+      } else {
+        const near = i < trial.next + 4;
+        g.ring.material.opacity = (near ? 0.45 : 0.2) * far; g.halo.material.opacity = near ? 0.07*far : 0; g.ticks.material.opacity = (near ? 0.35 : 0.12) * far;
+      }
+    }
+  }
+
+  function steerHint(){
+    const g = gates[Math.min(trial.next, GATE_N-1)];
+    _t1.subVectors(g.pos, ship.pos);
+    const lx = _t1.dot(right), lf = _t1.dot(fwd), dy = _t1.y, ang = Math.atan2(lx, lf), a = Math.abs(ang);
+    const lr = ang > 0 ? 'RIGHT' : 'LEFT';
+    let h = a < 0.1 ? 'STRAIGHT AHEAD' : a < 0.55 ? 'BEAR ' + lr : a < 1.7 ? 'HARD ' + lr : 'TURN AROUND';
+    const tol = Math.max(4, Math.hypot(lx, lf) * 0.08);
+    if (dy > tol) h += ' · CLIMB'; else if (dy < -tol) h += ' · DIVE';
+    return h;
+  }
+  let trialAdvT = 0, advSteer = false;
+  function updateTrialAdvice(dt){
+    let text, tone = '', steer = false;
+    const n = Math.min(trial.next + 1, GATE_N);
+    if (trial.passNote > 0) { text = '+' + trial.lastBonus.toFixed(1) + ' SEC · GATE ' + trial.lastGate + ' CLEAR'; tone = 'good'; }
+    else if (trial.goBack) { text = 'TURN AROUND · FLY BACK THROUGH GATE ' + n; tone = 'amber'; }
+    else if (trial.missNote > 0) { text = '−' + MISS_PEN + ' SEC · GATE ' + n + ' IS A MUST-PASS'; tone = 'warn'; }
+    else if (threats.ahead < 35) text = 'DODGE WITH WASD · OR FIRE';
+    else if (trial.offCourse) text = 'OFF COURSE · FOLLOW THE ARROWS';
+    else { text = (gates[n-1].finish ? 'FINISH' : 'GATE ' + n + '/' + GATE_N) + ' · ' + steerHint(); steer = true; tone = trial.mustPass ? 'amber' : ''; }
+    trialAdvT -= dt;
+    if (text === advText) return;
+    if (steer && advSteer && trialAdvT > 0) return; // don't flicker between steering calls
+    advText = text; advSteer = steer; trialAdvT = 0.4;
+    adviceEl.textContent = text; adviceEl.className = 'abs trim on ' + tone;
+  }
+
+  // gate tag (number + range above the next gate) and a cyan edge pointer when it's off-screen
+  const gateTag = $('gate-tag');
+  const gateEdge = document.createElement('div'); gateEdge.className = 'edge gate'; $('edges').appendChild(gateEdge);
+  function updateGateMarker(){
+    if (gameMode !== 'trial' || trial.next >= GATE_N){ gateTag.className = 'abs'; gateEdge.style.opacity = 0; return; }
+    const g = gates[trial.next], amber = trial.mustPass || trial.goBack;
+    const dist = ship.pos.distanceTo(g.pos);
+    _t2.copy(g.pos).addScaledVector(_up, GATE_R * 1.35);
+    _cam.copy(_t2).applyMatrix4(camera.matrixWorldInverse);
+    let on = false;
+    if (_cam.z < -2){
+      _proj.copy(_t2).project(camera);
+      const sx = (_proj.x + 1) * 0.5 * W, sy = (1 - _proj.y) * 0.5 * H;
+      on = sx > 60 && sx < W-60 && sy > 60 && sy < H-60;
+      if (on){
+        gateTag.innerHTML = (g.finish ? 'FINISH' : 'GATE ' + String(trial.next + 1).padStart(2, '0')) + '<span>' + Math.round(dist) + 'M</span>';
+        gateTag.style.transform = 'translate(' + sx.toFixed(1) + 'px,' + sy.toFixed(1) + 'px) translate(-50%,-100%)';
+      }
+    }
+    gateTag.className = 'abs' + (on ? ' on' : '') + (amber ? ' amber' : g.finish ? ' finish' : '');
+    gateEdge.className = 'edge gate' + (amber ? ' amber' : '');
+    if (on){ gateEdge.style.opacity = 0; return; }
+    _cam.copy(g.pos).applyMatrix4(camera.matrixWorldInverse);
+    let ang = Math.atan2(_cam.y, _cam.x);
+    if (_cam.z > 0 && Math.abs(_cam.x) < 0.5 && Math.abs(_cam.y) < 0.5) ang = -Math.PI/2;
+    const ex = 960 + Math.cos(ang)*850, ey = 540 - Math.sin(ang)*440;
+    gateEdge.style.transform = 'translate(' + (ex - 10).toFixed(1) + 'px,' + (ey - 8.5).toFixed(1) + 'px) rotate(' + (90 - ang*180/Math.PI).toFixed(1) + 'deg)';
+    gateEdge.style.opacity = 1;
+  }
+
+  function sfxGate(finish){
+    const ac = audio(); if (!ac) return;
+    const t = ac.currentTime;
+    (finish ? [660, 880, 1320, 1760] : [990, 1480]).forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain(), t0 = t + i*0.07;
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.12, t0+0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0+0.28);
+      o.connect(g); g.connect(ac.destination); o.start(t0); o.stop(t0+0.32);
+    });
+  }
+  function sfxMiss(){
+    const ac = audio(); if (!ac) return;
+    const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'square'; o.frequency.setValueAtTime(196, t); o.frequency.exponentialRampToValueAtTime(98, t+0.35);
+    g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.0001, t+0.4);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.42);
+  }
+
+  function finishTrial(){
+    const total = trial.lap + trial.penalty, prev = trialBest(), isBest = !prev || total < prev;
+    if (isBest) saveBest(total);
+    gates[GATE_N-1].state = 'passed'; gates[GATE_N-1].fade = 0.6;
+    sfxGate(true);
+    mission = 'lost'; paused = true; firing = false;
+    for (const k in keys) keys[k] = false;
+    if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
+    let l2 = trial.clean + ' OF ' + GATE_N + ' GATES CLEAN';
+    if (prev && isBest) l2 += ' &nbsp;•&nbsp; ' + (prev - total).toFixed(2) + 'S FASTER';
+    else if (prev) l2 += ' &nbsp;•&nbsp; +' + (total - prev).toFixed(2) + 'S OFF YOUR BEST';
+    showOverlay({ scoreLabel: isBest ? 'NEW BEST' : 'BEST TIME', scoreText: fmtTime(isBest ? total : prev), title:'COURSE COMPLETE',
+      line1:'TIME ' + fmtTime(total) + (trial.penalty ? ' &nbsp;•&nbsp; INCLUDES +' + trial.penalty + 'S PENALTY' : ''), line2:l2,
+      button:'CLICK TO RACE AGAIN', modes:true });
   }
 
   // ---------------------------------------------------------------
@@ -936,7 +1341,8 @@
   const lockLabel = document.querySelector('#lock em');
 
   applyRockStyle();
-  startWave(1);
+  resetMission();
+  showReady();
 
   let idleAmt = 1;
   function animate(){
@@ -964,6 +1370,10 @@
     if (keys.brake && sp > 0) ship.vel.multiplyScalar(Math.max(0, sp - BRAKE_DEC*dt) / sp);
     ship.vel.multiplyScalar(1 - DRIFT_DRAG*dt);
     if (ship.vel.length() > MAX_SPEED) ship.vel.setLength(MAX_SPEED);
+    if (gameMode === 'trial'){ // racing grip: sideways slide bleeds off so the ship follows its nose through turns
+      _a.copy(fwd).multiplyScalar(ship.vel.dot(fwd));
+      ship.vel.lerp(_a, Math.min(1, TRIAL_GRIP*dt));
+    }
     thrustAmt += ((keys.thrust ? 1 : 0) - thrustAmt) * Math.min(1, 4*dt);
     brakeAmt  += ((keys.brake  ? 1 : 0) - brakeAmt)  * Math.min(1, 4*dt);
 
@@ -1009,7 +1419,7 @@
       // rocks home in on you: steer their drift toward the ship. Smaller pieces are faster and turn harder,
       // and every round makes them all quicker and more aggressive.
       if (k.stun > 0) k.stun -= dt;
-      else if (flying){
+      else if (flying && gameMode === 'asteroids'){
         const r1 = wave - 1;
         const top  = k.size === 3 ? 12 + r1*2.2 : k.size === 2 ? 14 + r1*2.6 : 18 + r1*3;
         const turn = (k.size === 3 ? 0.22 : k.size === 2 ? 0.38 : 0.55) * (1 + r1*0.18);
@@ -1031,7 +1441,7 @@
       }
       p.addScaledVector(k.vel, dt);
       if (Math.abs(p.y) > ALT_BAND){ p.y = Math.sign(p.y)*ALT_BAND; k.vel.y *= -1; }
-      p.x = wrapNear(p.x, ship.pos.x, SECTOR); p.z = wrapNear(p.z, ship.pos.z, SECTOR);
+      if (gameMode === 'asteroids'){ p.x = wrapNear(p.x, ship.pos.x, SECTOR); p.z = wrapNear(p.z, ship.pos.z, SECTOR); }
       k.mesh.rotation.x += k.rot.x*rawDt; k.mesh.rotation.y += k.rot.y*rawDt; k.mesh.rotation.z += k.rot.z*rawDt; // tumble never stops
 
       _rel.subVectors(p, ship.pos);
@@ -1065,7 +1475,7 @@
         onScreen = sx > 40 && sx < W-40 && sy > 40 && sy < H-40;
         if (!keys.rear && dist < LOCK_RANGE && Math.hypot(sx - RETICLE_CX, sy - RETICLE_CY) < RETICLE_R && dist < bestDist){ best = k; bestDist = dist; }
       }
-      if (!onScreen && dist < 80) edgeList.push({ x:_cam.x, y:_cam.y, d:dist, threat:k.threat });
+      if (!onScreen && dist < 80 && (gameMode === 'asteroids' || k.threat)) edgeList.push({ x:_cam.x, y:_cam.y, d:dist, threat:k.threat });
 
     }
     if (mission === 'flying' || paused){ const sr = updateSaucers(dt, flying, best, bestDist); best = sr.best; bestDist = sr.bestDist; }
@@ -1101,8 +1511,15 @@
     if (regenDelay > 0) regenDelay -= dt;
     if (impactNote > 0) impactNote -= dt;
 
+    // --- time trial
+    if (gameMode === 'trial'){
+      trackShip();
+      if (flying) updateTrial(dt);
+      updateTrialVisuals(rawDt, camT);
+    }
+
     // --- waves
-    if (flying){
+    if (flying && gameMode === 'asteroids'){
       if (waveBreak > 0){
         waveBreak -= dt;
         if (waveBreak <= 0){ wave++; startWave(wave); }
@@ -1124,14 +1541,16 @@
   }
 
   function updateHud(dt, lockDist, turnFeel){
-    setMono(el.time, fmtTime(waveTime));
+    const trialOn = gameMode === 'trial';
+    setMono(el.time, fmtTime(trialOn ? Math.max(0, trial.left) : waveTime));
     hudTick += dt;
     if (hudTick > 0.12){ hudTick = 0; jitterV = Math.round(Math.random()*2 - 1); jitterG = Math.round((Math.random()-0.5)*8); }
     const speed = Math.hypot(shipVel.x, shipVel.z);
     setMono(el.velocity, Math.max(0, Math.round(speed*1.2) + (speed > 1 ? jitterV : 0)));
     const left = rocksAlive();
     const hl = hitsLeft();
-    el.dist.textContent = waveBreak > 0 ? 'ROUND ' + (wave+1) + ' INCOMING' : 'ROUND ' + wave + ' · ' + hl + (hl === 1 ? ' HIT' : ' HITS') + ' TO CLEAR';
+    el.dist.textContent = trialOn ? 'GATE ' + Math.min(trial.next + 1, GATE_N) + '/' + GATE_N + ' · LAP ' + fmtTime(trial.lap + trial.penalty)
+      : waveBreak > 0 ? 'ROUND ' + (wave+1) + ' INCOMING' : 'ROUND ' + wave + ' · ' + hl + (hl === 1 ? ' HIT' : ' HITS') + ' TO CLEAR';
     if (timeBump > 0){ timeBump -= dt; }
     el.time.style.filter = timeBump > 0 ? 'drop-shadow(0 0 8px #0bd5ed) brightness(1.4)' : '';
 
@@ -1142,7 +1561,17 @@
 
     // alert slot — most urgent wins
     let alert = '', cls = '';
-    if (threats.ahead < 35) { alert = 'EVASIVE ACTION'; cls = 'urgent'; }
+    if (trialOn){
+      if (threats.ahead < 35) { alert = 'EVASIVE ACTION'; cls = 'urgent'; }
+      else if (trial.goBack) { alert = 'GO BACK'; cls = 'urgent amber'; }
+      else if (trial.missNote > 0) { alert = 'GATE MISSED'; cls = 'urgent'; }
+      else if (shield <= 0) { alert = 'SHIELDS DOWN'; cls = 'steady'; }
+      else if (trial.left < 5) { alert = 'TIME CRITICAL'; cls = 'urgent'; }
+      else if (trial.mustPass) { alert = 'MUST PASS'; cls = 'steady amber'; }
+      else if (trial.next === GATE_N - 1) { alert = 'FINAL GATE'; cls = 'steady info'; }
+      else if (threats.ahead < 90) alert = 'DEBRIS AHEAD';
+    }
+    else if (threats.ahead < 35) { alert = 'EVASIVE ACTION'; cls = 'urgent'; }
     else if (hostileBehind < 140) { alert = 'HOSTILE BEHIND'; cls = 'urgent'; }
     else if (threats.behind < 60) { alert = 'DEBRIS BEHIND'; cls = 'urgent'; }
     else if (saucerAlert > 0) { alert = 'VESSEL DETECTED'; }
@@ -1151,7 +1580,8 @@
     else if (shield <= 0) { alert = 'SHIELDS DOWN'; cls = 'steady'; }
     else if (shield / SHIELD_MAX <= 1/3) { alert = 'SHIELDS CRITICAL'; }
     if (alert && el.warning.textContent !== alert) el.warning.textContent = alert;
-    updateAdvice(dt, hl);
+    if (trialOn) updateTrialAdvice(dt); else updateAdvice(dt, hl);
+    updateGateMarker();
     el.warning.className = 'abs' + (alert ? ' on ' + cls : '');
 
     el.rear.hidden = !keys.rear;
@@ -1208,6 +1638,57 @@
     setMono(el.energy, Math.floor(energy));
   }
 
+  // time trial: the radar works like a racing minimap — zoomed out, the route ahead drawn thick and bright,
+  // the part you've flown dimmed, upcoming gates as rings (next one biggest). Rocks only show when they're a threat.
+  const RADAR_RANGE_TRIAL = 330;
+  function drawRadarCourse(c){
+    const R = RADAR_RANGE_TRIAL, toX = lx => RC + lx / R * RR, toY = lf => RC - lf / R * RR;
+    const split = Math.min(trial.shipIdx, NS);
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    const path = (from, to) => {
+      c.beginPath(); let pen = false;
+      for (let i = from; i <= to; i += 2){
+        _rel.set(samples[i*3] - ship.pos.x, 0, samples[i*3+2] - ship.pos.z);
+        const lx = _rel.dot(right), lf = _rel.dot(fwd);
+        if (Math.hypot(lx, lf) > R * 1.3){ pen = false; continue; }
+        if (pen) c.lineTo(toX(lx), toY(lf)); else { c.moveTo(toX(lx), toY(lf)); pen = true; }
+      }
+      c.stroke();
+    };
+    // flown: thin and dim
+    c.lineWidth = 5; c.strokeStyle = 'rgba(11,213,237,0.22)'; c.shadowBlur = 0;
+    path(0, split);
+    // ahead: thick glowing route (amber while a must-pass is up)
+    const amber = trial.mustPass || trial.goBack, col = amber ? '255,192,74' : '11,213,237';
+    c.lineWidth = 22; c.strokeStyle = 'rgba(' + col + ',0.18)'; path(split, NS);       // soft outer band
+    c.lineWidth = 9; c.strokeStyle = 'rgba(' + col + ',0.9)'; c.shadowColor = 'rgb(' + col + ')'; c.shadowBlur = 14;
+    path(split, NS);
+    c.shadowBlur = 0;
+    // gates: next one big (pinned to the rim if out of range), the two after it smaller
+    for (let j = 2; j >= 0; j--){
+      const i = trial.next + j; if (i >= GATE_N) continue;
+      _rel.subVectors(gates[i].pos, ship.pos);
+      let lx = _rel.dot(right), lf = _rel.dot(fwd);
+      const d = Math.hypot(lx, lf), lim = R * 0.9;
+      if (d > lim){ if (j > 0) continue; lx *= lim/d; lf *= lim/d; }
+      const gc = j === 0 && amber ? '#ffc04a' : j === 0 ? '#ffffff' : '#d1faff';
+      c.globalAlpha = j === 0 ? 1 : 0.55;
+      c.lineWidth = j === 0 ? 7 : 4; c.strokeStyle = gc; c.fillStyle = '#01070b'; c.shadowColor = gc; c.shadowBlur = j === 0 ? 14 : 0;
+      c.beginPath(); c.arc(toX(lx), toY(lf), j === 0 ? 16 : 10, 0, Math.PI*2); c.fill(); c.stroke();
+    }
+    c.globalAlpha = 1; c.shadowBlur = 0;
+    // rocks: only the ones on a collision course
+    for (const k of rocks){
+      if (!k.active || !k.threat) continue;
+      _rel.subVectors(k.mesh.position, ship.pos);
+      const lx = _rel.dot(right), lf = _rel.dot(fwd);
+      if (Math.hypot(lx, lf) > R) continue;
+      c.fillStyle = '#fc4340'; c.shadowColor = '#fc4340'; c.shadowBlur = 12;
+      c.beginPath(); c.arc(toX(lx), toY(lf), SIZES[k.size].dot * RS, 0, Math.PI*2); c.fill();
+    }
+    c.shadowBlur = 0;
+  }
+
   function drawRadar(){
     const c = rctx;
     c.clearRect(0, 0, 400, 400);
@@ -1223,8 +1704,9 @@
     c.beginPath(); c.moveTo(RC, RC); c.arc(RC, RC, RR, dir - half, dir + half); c.closePath();
     c.fillStyle = 'rgba(11,213,237,0.08)'; c.fill();
     c.beginPath(); c.arc(RC, RC, RR, 0, Math.PI*2); c.clip();
-    // rocks, rotated so your heading points up
-    for (const k of rocks){
+    if (gameMode === 'trial') drawRadarCourse(c);
+    // rocks, rotated so your heading points up (time trial draws its own, threats only)
+    for (const k of (gameMode === 'trial' ? [] : rocks)){
       if (!k.active) continue;
       _rel.subVectors(k.mesh.position, ship.pos);
       const lx = _rel.dot(right), lf = _rel.dot(fwd);
