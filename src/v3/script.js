@@ -948,7 +948,10 @@
   let gameMode = 'asteroids';
   try { if (localStorage.getItem('stta.mode') === 'trial') gameMode = 'trial'; } catch(e){}
   const TEAL = new THREE.Color(0x0bd5ed), AMBER = new THREE.Color(0xffc04a), RED = new THREE.Color(0xfc4340), ICE = new THREE.Color(0xd1faff);
-  const GATE_N = 20, GATE_R = 16; // gate radius = the outer arcs of the HUD brackets = the pass-through radius
+  const GATE_N = 20, GATE_R = 22; // gate radius = the outer arcs of the HUD brackets = the pass-through radius
+  // gates sit this far above the racing line, so the arrow rails (RAIL_Y below the line) run through their lower half
+  // and you can fly anywhere from just above the arrows up through the middle and still make it
+  const GATE_LIFT = 6;
   const TRIAL_START = 15, TRIAL_CAP = 40, PACE = 46, MISS_PEN = 3, TRIAL_GRIP = 2.2;
   const ZERO = new THREE.Vector3(), _zAxis = new THREE.Vector3(0,0,1), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3();
   const _cTan = new THREE.Vector3(), _cRight = new THREE.Vector3(), _cUp = new THREE.Vector3(), _col = new THREE.Color();
@@ -1058,16 +1061,18 @@
   }
   // hairline look: hold the stroke at ~1.5px on screen at any range (thin world-space lines would shimmer away in the distance)
   function gateWidth(g, dist){
-    const lw = clamp(dist * 0.0016, 0.05, 0.6);
+    const lw = clamp(dist * 0.00105, 0.035, 0.45); // ≈1px
     if (g.lw && Math.abs(lw - g.lw) / g.lw < 0.03) return;
     g.lw = lw;
-    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.7, lw * 7)); }
+    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.5, lw * 6)); }
   }
   const gateLineGeos = gatePolys.map(p => ribbonGeo(p, GATE_LINE_W)), gateGlowGeos = gatePolys.map(p => glowGeo(p, GATE_GLOW_W));
   const gates = [];
   for (let i=0;i<GATE_N;i++){
     const u = COURSE_L * (i+1) / GATE_N;
-    const pos = course.getPointAt(u / COURSE_L), n = course.getTangentAt(u / COURSE_L).normalize();
+    const aim = new THREE.Vector3(), n = new THREE.Vector3(), pos = new THREE.Vector3();
+    courseFrame(u, aim, n, _cRight, _cUp);
+    pos.copy(aim).addScaledVector(_cUp, GATE_LIFT); // lifted off the racing line; 'aim' (on the line) is what steering hints use
     const add = { transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.DoubleSide }; // range fade is done by hand
     const lineMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL }, add));
     const glowMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL, vertexColors:true, opacity:0.35 }, add));
@@ -1082,7 +1087,7 @@
     grp.position.copy(pos); grp.quaternion.setFromUnitVectors(_zAxis, n);
     grp.visible = false;
     trialGroup.add(grp);
-    gates.push({ u, pos, n, grp, spin, strokes, lineMat, glowMat, revealT:-1, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
+    gates.push({ u, pos, aim, n, grp, spin, strokes, lineMat, glowMat, revealT:-1, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
   }
   // draw-on: each stroke grows along its own path (top sweeps one way, bottom the other, brackets follow)
   function drawGate(g, t){
@@ -1320,7 +1325,7 @@
 
   function steerHint(){
     const g = gates[Math.min(trial.next, GATE_N-1)];
-    _t1.subVectors(g.pos, ship.pos);
+    _t1.subVectors(g.aim, ship.pos); // steer for the racing line; the gate is big enough around it
     const lx = _t1.dot(right), lf = _t1.dot(fwd), dy = _t1.y, ang = Math.atan2(lx, lf), a = Math.abs(ang);
     const lr = ang > 0 ? 'RIGHT' : 'LEFT';
     let h = a < 0.1 ? 'STRAIGHT AHEAD' : a < 0.55 ? 'BEAR ' + lr : a < 1.7 ? 'HARD ' + lr : 'TURN AROUND';
@@ -1352,7 +1357,7 @@
     if (gameMode !== 'trial' || trial.next >= GATE_N){ gateTag.className = 'abs'; gateEdge.style.opacity = 0; return; }
     const g = gates[trial.next], amber = trial.mustPass || trial.goBack;
     const dist = ship.pos.distanceTo(g.pos);
-    _t2.copy(g.pos).addScaledVector(_up, GATE_R * 1.35);
+    _t2.copy(g.pos).addScaledVector(_up, GATE_R + 3);
     _cam.copy(_t2).applyMatrix4(camera.matrixWorldInverse);
     let on = false;
     if (_cam.z < -2){
