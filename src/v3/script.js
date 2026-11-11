@@ -1025,50 +1025,66 @@
     }
     return o;
   }
-  function ribbonGeo(pts, w){ // solid stroke: 6 verts per segment
-    const o = strokeOffsets(pts, 1), v = [], h = w/2;
-    for (let i=0;i<pts.length-1;i++){
-      const a = pts[i], b = pts[i+1], na = [o[i][0]*h, o[i][1]*h], nb = [o[i+1][0]*h, o[i+1][1]*h];
-      v.push(a.x+na[0],a.y+na[1],0, a.x-na[0],a.y-na[1],0, b.x-nb[0],b.y-nb[1],0,
-             a.x+na[0],a.y+na[1],0, b.x-nb[0],b.y-nb[1],0, b.x+nb[0],b.y+nb[1],0);
-    }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-    g.userData = { per:6, segs:pts.length - 1, pts, o, glow:false }; return g;
-  }
-  function glowGeo(pts, w){ // soft glow: bright along the centre line, fading to nothing at both edges (12 verts per segment)
-    const o = strokeOffsets(pts, 1), v = [], c = [], h = w/2;
-    for (let i=0;i<pts.length-1;i++){
-      const a = pts[i], b = pts[i+1], na = [o[i][0]*h, o[i][1]*h], nb = [o[i+1][0]*h, o[i+1][1]*h];
-      for (const sd of [1, -1]){
-        const ae = [a.x+na[0]*sd, a.y+na[1]*sd], be = [b.x+nb[0]*sd, b.y+nb[1]*sd];
-        v.push(a.x,a.y,0, ae[0],ae[1],0, be[0],be[1],0,  a.x,a.y,0, be[0],be[1],0, b.x,b.y,0);
-        c.push(1,1,1, 0,0,0, 0,0,0,  1,1,1, 0,0,0, 1,1,1);
-      }
-    }
+  // A stroke is one or more polylines; geometry keeps them in order so a draw-on reveals them in sequence.
+  const asPolys = list => list.map(pts => ({ pts, o:strokeOffsets(pts, 1) }));
+  const segCount = polys => polys.reduce((n, q) => n + q.pts.length - 1, 0);
+  function ribbonGeo(polys, w){ // solid stroke: 6 verts per segment
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-    g.userData = { per:12, segs:pts.length - 1, pts, o, glow:true }; return g;
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(segCount(polys) * 18), 3));
+    g.userData = { per:6, segs:segCount(polys), polys, glow:false }; setStrokeWidth(g, w); return g;
   }
-  // rewrite a stroke's width in place (same vertex order as ribbonGeo / glowGeo)
+  function glowGeo(polys, w){ // soft glow: bright along the centre line, fading to nothing at both edges (12 verts per segment)
+    const n = segCount(polys), c = [];
+    for (let i=0;i<n*2;i++) c.push(1,1,1, 0,0,0, 0,0,0,  1,1,1, 0,0,0, 1,1,1);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 36), 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+    g.userData = { per:12, segs:n, polys, glow:true }; setStrokeWidth(g, w); return g;
+  }
+  // (re)write a stroke's width in place
   function setStrokeWidth(geo, w){
-    const { pts, o, glow } = geo.userData, h = w/2, arr = geo.attributes.position.array;
+    const { polys, glow } = geo.userData, h = w/2, arr = geo.attributes.position.array;
     let j = 0;
     const put = (x, y) => { arr[j++] = x; arr[j++] = y; arr[j++] = 0; };
-    for (let i=0;i<pts.length-1;i++){
+    for (const { pts, o } of polys) for (let i=0;i<pts.length-1;i++){
       const a = pts[i], b = pts[i+1], ax = o[i][0]*h, ay = o[i][1]*h, bx = o[i+1][0]*h, by = o[i+1][1]*h;
       if (!glow){ put(a.x+ax,a.y+ay); put(a.x-ax,a.y-ay); put(b.x-bx,b.y-by); put(a.x+ax,a.y+ay); put(b.x-bx,b.y-by); put(b.x+bx,b.y+by); }
       else for (const sd of [1, -1]){ put(a.x,a.y); put(a.x+ax*sd,a.y+ay*sd); put(b.x+bx*sd,b.y+by*sd); put(a.x,a.y); put(b.x+bx*sd,b.y+by*sd); put(b.x,b.y); }
     }
     geo.attributes.position.needsUpdate = true;
   }
-  // hairline look: hold the stroke at ~1.5px on screen at any range (thin world-space lines would shimmer away in the distance)
+  // hairline look: hold the stroke at a constant fraction of a pixel at any range (thin world-space lines would shimmer away)
   function gateWidth(g, dist){
     const lw = clamp(dist * 0.00038, 0.014, 0.18); // ≈0.35px — about as fine as WebGL draws a line without breaking it up
     if (g.lw && Math.abs(lw - g.lw) / g.lw < 0.03) return;
     g.lw = lw;
-    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.4, lw * 8)); }
+    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); if (st.glow) setStrokeWidth(st.glow.geometry, Math.max(0.4, lw * 8)); }
   }
-  const gateLineGeos = gatePolys.map(p => ribbonGeo(p, GATE_LINE_W)), gateGlowGeos = gatePolys.map(p => glowGeo(p, GATE_GLOW_W));
+
+  // --- fine HUD detail around the brackets (after Orlando's reference): kept as hairlines with no glow so it stays light
+  const V2 = (x, y) => new THREE.Vector2(x, y), R_ = GATE_R, DEG = Math.PI / 180;
+  const polar = (r, a) => V2(Math.cos(a*DEG) * r, Math.sin(a*DEG) * r);
+  const arcPts = (r, a0, a1) => { const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 1.5)), q = []; for (let i=0;i<=n;i++) q.push(polar(r, a0 + (a1 - a0) * i / n)); return q; };
+  const radial = (a, r0, r1) => [polar(r0, a), polar(r1, a)];
+  // top dial: arc above the gate with ticks every 4°, longer ones every 20° (drawn left → right)
+  const dialTop = [arcPts(R_*1.14, 118, 62)];
+  for (let a = 118; a >= 62; a -= 4) dialTop.push(radial(a, R_*1.14, R_*(1.14 + ((a - 70) % 20 === 0 ? 0.08 : 0.035))));
+  // bottom notch arc: ticks pointing in, a longer centre notch
+  const dialBot = [arcPts(R_*1.1, 245, 295)];
+  for (let a = 245; a <= 295; a += 5) dialBot.push(radial(a, R_*1.1, R_*(1.1 - (a === 270 ? 0.07 : 0.03))));
+  // side ladders (stay level): five short dashes outside each bracket
+  const ladders = [];
+  for (const sx of [-1, 1]) for (let k = -2; k <= 2; k++){
+    const y = k * R_ * 0.075, x0 = sx * R_ * 1.2, len = (k === 0 ? 0.09 : 0.05) * R_;
+    ladders.push([V2(x0, y), V2(x0 + sx*len, y)]);
+  }
+  // centre pip: four tiny ticks with a gap
+  const pip = [[V2(-R_*0.12, 0), V2(-R_*0.05, 0)], [V2(R_*0.05, 0), V2(R_*0.12, 0)], [V2(0, R_*0.05), V2(0, R_*0.09)], [V2(0, -R_*0.05), V2(0, -R_*0.09)]];
+  const GATE_DETAIL = [ // [polylines, layer, delay, duration]
+    [dialTop, 'dial', 0.34, 0.42], [dialBot, 'dial', 0.4, 0.34], [ladders, 'still', 0.46, 0.3], [pip, 'still', 0.5, 0.2],
+  ].map(([list, layer, delay, dur]) => ({ geo:ribbonGeo(asPolys(list), GATE_LINE_W), layer, delay, dur }));
+  const DIAL_SPIN = 0.22; // rad/s, the opposite way to the brackets
+
+  const gateLineGeos = gatePolys.map(p => ribbonGeo(asPolys([p]), GATE_LINE_W)), gateGlowGeos = gatePolys.map(p => glowGeo(asPolys([p]), GATE_GLOW_W));
   const gates = [];
   for (let i=0;i<GATE_N;i++){
     const u = COURSE_L * (i+1) / GATE_N;
@@ -1078,27 +1094,38 @@
     const add = { transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.DoubleSide }; // range fade is done by hand
     const lineMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL }, add));
     const glowMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL, vertexColors:true, opacity:0.35 }, add));
-    const spin = new THREE.Group(), strokes = [];
+    const dimMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL }, add)); // the fine detail sits a step back
+    const spin = new THREE.Group(), dial = new THREE.Group(), still = new THREE.Group(), strokes = [];
+    const cloneGeo = src => { const g2 = src.clone(); g2.userData = src.userData; return g2; };
     GATE_PATHS.forEach((pd, j) => {
-      const line = new THREE.Mesh(gateLineGeos[j].clone(), lineMat), glow = new THREE.Mesh(gateGlowGeos[j].clone(), glowMat);
-      line.geometry.userData = gateLineGeos[j].userData; glow.geometry.userData = gateGlowGeos[j].userData;
+      const line = new THREE.Mesh(cloneGeo(gateLineGeos[j]), lineMat), glow = new THREE.Mesh(cloneGeo(gateGlowGeos[j]), glowMat);
       spin.add(glow); spin.add(line);
       strokes.push({ line, glow, delay:pd[1], dur:pd[2] });
     });
-    const grp = new THREE.Group(); grp.add(spin);
+    for (const d of GATE_DETAIL){
+      const line = new THREE.Mesh(cloneGeo(d.geo), dimMat);
+      (d.layer === 'dial' ? dial : still).add(line);
+      strokes.push({ line, glow:null, delay:d.delay, dur:d.dur });
+    }
+    const grp = new THREE.Group(); grp.add(spin); grp.add(dial); grp.add(still);
     grp.position.copy(pos); grp.quaternion.setFromUnitVectors(_zAxis, n);
     grp.visible = false;
     trialGroup.add(grp);
-    gates.push({ u, pos, aim, n, grp, spin, strokes, lineMat, glowMat, revealT:-1, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
+    gates.push({ u, pos, aim, n, grp, spin, dial, still, strokes, lineMat, glowMat, dimMat, revealT:-1, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
   }
-  // draw-on: each stroke grows along its own path (top sweeps one way, bottom the other, brackets follow)
+  // draw-on: each stroke grows along its own path (top sweeps one way, bottom the other, brackets follow, then the detail)
   function drawGate(g, t){
     for (const s of g.strokes){
       const k = clamp((t - s.delay) / s.dur, 0, 1), e = 1 - Math.pow(1 - k, 2);
-      const lu = s.line.geometry.userData, gu = s.glow.geometry.userData;
+      const lu = s.line.geometry.userData;
       s.line.geometry.setDrawRange(0, Math.round(e * lu.segs) * lu.per);
-      s.glow.geometry.setDrawRange(0, Math.round(e * gu.segs) * gu.per);
+      if (s.glow){ const gu = s.glow.geometry.userData; s.glow.geometry.setDrawRange(0, Math.round(e * gu.segs) * gu.per); }
     }
+  }
+  // the three layers: brackets turn one way, the dial the other, ladders + pip stay level; all settle in together
+  function poseGate(g, scale, rot, dialRot){
+    for (const l of [g.spin, g.dial, g.still]) l.scale.setScalar(scale);
+    g.spin.rotation.z = rot; g.dial.rotation.z = dialRot;
   }
   function sfxGateReveal(){
     const ac = audio(); if (!ac) return;
@@ -1111,7 +1138,7 @@
   // --- arrow rails, built from Orlando's Arrow.svg (viewBox 164.6 × 152.2): the triangle plus the accent stroke
   //     that runs parallel to its left edge. They lie flat just below the racing line, tip pointing down-course,
   //     and the right rail is mirrored so the accent stroke is always on the outside.
-  const ARROW_GAP = 10, RAIL_X = 12.5, RAIL_Y = 4.5, ARROW_LEN = 2.8;
+  const ARROW_GAP = 10, RAIL_X = 19, RAIL_Y = 4.5, ARROW_LEN = 3.3; // lanes about 1.5× wider; perspective still pulls them together
   function arrowGeometry(mirror){
     const s = ARROW_LEN / 152.2, cx = 88.3, cy = 76.1, m = mirror ? -1 : 1;
     const P = (x, y) => new THREE.Vector2((x - cx) * s * m, (cy - y) * s);
@@ -1189,7 +1216,7 @@
   function startTrial(){
     Object.assign(trial, { next:0, mustPass:false, goBack:false, left:TRIAL_START, lap:0, penalty:0, clean:0, missed:0,
       passNote:0, missNote:0, lastBonus:0, lastGate:0, shipU:0, shipIdx:0, offCourse:false });
-    for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.revealT = -1; g.grp.visible = false; g.grp.scale.setScalar(1); g.spin.scale.setScalar(1); g.spin.rotation.z = 0; }
+    for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.revealT = -1; g.grp.visible = false; g.grp.scale.setScalar(1); poseGate(g, 1, 0, 0); }
     courseFrame(0, ship.pos, _cTan, _cRight, _cUp);
     ship.yaw = Math.atan2(-_cTan.x, -_cTan.z);
     placeTrialRocks();
@@ -1298,9 +1325,9 @@
         g.fade -= rawDt;
         const k = Math.max(0, g.fade / (g.state === 'missed' ? 0.9 : 0.6));
         const c = g.state === 'missed' ? RED : ICE;
-        drawGate(g, 99); g.spin.scale.setScalar(1); g.spin.rotation.z -= GATE_SPIN * rawDt;
-        g.lineMat.color.copy(c); g.glowMat.color.copy(c);
-        g.lineMat.opacity = k; g.glowMat.opacity = 0.6*k;
+        drawGate(g, 99); poseGate(g, 1, g.spin.rotation.z - GATE_SPIN * rawDt, g.dial.rotation.z + DIAL_SPIN * rawDt);
+        g.lineMat.color.copy(c); g.glowMat.color.copy(c); g.dimMat.color.copy(c);
+        g.lineMat.opacity = k; g.glowMat.opacity = 0.6*k; g.dimMat.opacity = 0.6*k;
         g.grp.scale.setScalar(1 + (1-k)*(g.state === 'missed' ? 0.1 : 0.4));
         continue;
       }
@@ -1314,13 +1341,14 @@
       g.revealT += rawDt;
       const rt = g.revealT, k = 1 - Math.pow(1 - clamp(rt / GATE_REVEAL, 0, 1), 3);
       drawGate(g, rt);
-      g.spin.scale.setScalar(1.22 - 0.22*k); g.spin.rotation.z = (1 - k) * 0.45 - (reduceMotion ? 0 : GATE_SPIN * rt);
+      poseGate(g, 1.22 - 0.22*k, (1 - k) * 0.45 - (reduceMotion ? 0 : GATE_SPIN * rt), -(1 - k) * 0.3 + (reduceMotion ? 0 : DIAL_SPIN * rt));
       const gd = ship.pos.distanceTo(g.pos), far = clamp(1.25 - gd / 520, 0.12, 1);
       gateWidth(g, gd);
       const c = trial.mustPass || trial.goBack ? AMBER : g.finish ? ICE : TEAL;
       const pulse = 0.75 + 0.25*Math.sin(t*6), flash = Math.max(0, 1 - Math.abs(rt - GATE_REVEAL) / 0.3); // brief glow as it locks in
-      g.lineMat.color.copy(c); g.glowMat.color.copy(c);
+      g.lineMat.color.copy(c); g.glowMat.color.copy(c); g.dimMat.color.copy(c);
       g.lineMat.opacity = 0.5 + 0.5*k; // full strength: the stroke is so fine it needs it at any range
+      g.dimMat.opacity = 0.6 * (0.5 + 0.5*k);
       g.glowMat.opacity = 0.35*pulse + 0.45*flash;
     }
   }
