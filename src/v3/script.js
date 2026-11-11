@@ -977,27 +977,109 @@
     return Math.sqrt(best);
   }
 
-  // --- gates: line-art rings (thin ring + soft halo + ticks), facing along the course
-  const gateTorus = new THREE.TorusGeometry(GATE_R, 0.3, 6, 72);
-  const gateHalo = new THREE.TorusGeometry(GATE_R, 1.2, 8, 72);
-  function tickGeo(n, r0, r1){
-    const p = [];
-    for (let i=0;i<n;i++){ const a = i/n*Math.PI*2, c = Math.cos(a), s = Math.sin(a); p.push(c*r0, s*r0, 0, c*r1, s*r1, 0); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); return g;
+  // --- gates: Orlando's HUD_Circles.svg (1920×1080 artboard, centred on 960,539): outer top/bottom arcs with stub
+  //     ends, plus outer and inner side brackets. Each stroke becomes a flat ribbon in the gate's plane, scaled so the
+  //     outer arcs sit on GATE_R, with a soft glow ribbon behind it. Only the next gate is shown: when a gate becomes
+  //     the next one its strokes draw on in sequence while it settles in (scale down + a little spin), as the gate you
+  //     just flew through flashes out.
+  const GATE_PATHS = [
+    // [svg path d, draw-on delay (s), duration (s)] — top/bottom first, then the outer brackets, then the inner ones
+    ['M903.7,487.2h5.4c13.1-12.8,31-20.8,50.8-20.8s37.7,7.9,50.8,20.8h5.4', 0.00, 0.42],
+    ['M1016.2,591.1h-5.4c-13.1,12.8-31,20.8-50.8,20.8s-37.7-7.9-50.8-20.8h-5.4', 0.00, 0.42],
+    ['M899.8,573.1h-3.8c-5.5-10.2-8.5-21.8-8.5-34.1s2.8-22.8,7.7-32.6h4.6', 0.12, 0.36],
+    ['M1020.1,506.4h4.6c4.9,9.8,7.7,20.9,7.7,32.6s-3.1,24-8.5,34.1h-3.8', 0.12, 0.36],
+    ['M913.1,565.8h-3c-4.2-7.9-6.6-17-6.6-26.6s2.2-17.8,6-25.4h3.6', 0.24, 0.36],
+    ['M1006.8,513.7h3.6c3.9,7.6,6,16.3,6,25.4s-2.4,18.7-6.6,26.6h-3', 0.24, 0.36],
+  ];
+  const GATE_REVEAL = 0.62, GATE_LINE_W = 0.4, GATE_GLOW_W = 1.8;
+  const reduceMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){ return false; } })();
+  // sample each path with the browser's own SVG geometry, so the shapes match the file exactly
+  const gatePolys = (() => {
+    const SVGNS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('width', '0'); svg.setAttribute('height', '0'); svg.style.position = 'absolute';
+    document.body.appendChild(svg);
+    const k = GATE_R / 72.6;
+    const out = GATE_PATHS.map(([d]) => {
+      const el = document.createElementNS(SVGNS, 'path'); el.setAttribute('d', d); svg.appendChild(el);
+      const len = el.getTotalLength(), n = Math.max(2, Math.ceil(len / 1.5)), pts = [];
+      for (let i=0;i<=n;i++){ const q = el.getPointAtLength(len * i / n); pts.push(new THREE.Vector2((q.x - 960) * k, -(q.y - 539.15) * k)); }
+      return pts;
+    });
+    svg.remove();
+    return out;
+  })();
+  // per-point offsets (mitred so the stroke keeps its width through the bends; no overlaps, so additive stays even)
+  function strokeOffsets(pts, h){
+    const N = pts.length, o = [];
+    for (let i=0;i<N;i++){
+      const a = pts[Math.max(0, i-1)], b = pts[Math.min(N-1, i+1)];
+      let tx = b.x - a.x, ty = b.y - a.y; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+      let m = 1;
+      if (i > 0 && i < N-1){ const sx = pts[i].x - a.x, sy = pts[i].y - a.y, sl = Math.hypot(sx, sy) || 1; m = 1 / Math.max(0.6, (sx*tx + sy*ty) / sl); }
+      o.push([-ty*h*m, tx*h*m]);
+    }
+    return o;
   }
-  const gateTicks = tickGeo(12, GATE_R + 0.8, GATE_R + 2.6), finishTicks = tickGeo(32, GATE_R + 0.8, GATE_R + 3.4);
+  function ribbonGeo(pts, w){ // solid stroke: 6 verts per segment
+    const o = strokeOffsets(pts, w/2), v = [];
+    for (let i=0;i<pts.length-1;i++){
+      const a = pts[i], b = pts[i+1], na = o[i], nb = o[i+1];
+      v.push(a.x+na[0],a.y+na[1],0, a.x-na[0],a.y-na[1],0, b.x-nb[0],b.y-nb[1],0,
+             a.x+na[0],a.y+na[1],0, b.x-nb[0],b.y-nb[1],0, b.x+nb[0],b.y+nb[1],0);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.userData.per = 6; g.userData.segs = pts.length - 1; return g;
+  }
+  function glowGeo(pts, w){ // soft glow: bright along the centre line, fading to nothing at both edges (12 verts per segment)
+    const o = strokeOffsets(pts, w/2), v = [], c = [];
+    for (let i=0;i<pts.length-1;i++){
+      const a = pts[i], b = pts[i+1], na = o[i], nb = o[i+1];
+      for (const sd of [1, -1]){
+        const ae = [a.x+na[0]*sd, a.y+na[1]*sd], be = [b.x+nb[0]*sd, b.y+nb[1]*sd];
+        v.push(a.x,a.y,0, ae[0],ae[1],0, be[0],be[1],0,  a.x,a.y,0, be[0],be[1],0, b.x,b.y,0);
+        c.push(1,1,1, 0,0,0, 0,0,0,  1,1,1, 0,0,0, 1,1,1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+    g.userData.per = 12; g.userData.segs = pts.length - 1; return g;
+  }
+  const gateLineGeos = gatePolys.map(p => ribbonGeo(p, GATE_LINE_W)), gateGlowGeos = gatePolys.map(p => glowGeo(p, GATE_GLOW_W));
   const gates = [];
   for (let i=0;i<GATE_N;i++){
     const u = COURSE_L * (i+1) / GATE_N;
     const pos = course.getPointAt(u / COURSE_L), n = course.getTangentAt(u / COURSE_L).normalize();
-    const add = { transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false }; // range fade is done by hand below
-    const ring = new THREE.Mesh(gateTorus, new THREE.MeshBasicMaterial(Object.assign({ color:TEAL }, add)));
-    const halo = new THREE.Mesh(gateHalo, new THREE.MeshBasicMaterial(Object.assign({ color:TEAL, opacity:0.2 }, add)));
-    const ticks = new THREE.LineSegments(i === GATE_N-1 ? finishTicks : gateTicks, new THREE.LineBasicMaterial(Object.assign({ color:TEAL }, add)));
-    const grp = new THREE.Group(); grp.add(halo); grp.add(ring); grp.add(ticks);
+    const add = { transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false, side:THREE.DoubleSide }; // range fade is done by hand
+    const lineMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL }, add));
+    const glowMat = new THREE.MeshBasicMaterial(Object.assign({ color:TEAL, vertexColors:true, opacity:0.35 }, add));
+    const spin = new THREE.Group(), strokes = [];
+    GATE_PATHS.forEach((pd, j) => {
+      const line = new THREE.Mesh(gateLineGeos[j].clone(), lineMat), glow = new THREE.Mesh(gateGlowGeos[j].clone(), glowMat);
+      line.geometry.userData = gateLineGeos[j].userData; glow.geometry.userData = gateGlowGeos[j].userData;
+      spin.add(glow); spin.add(line);
+      strokes.push({ line, glow, delay:pd[1], dur:pd[2] });
+    });
+    const grp = new THREE.Group(); grp.add(spin);
     grp.position.copy(pos); grp.quaternion.setFromUnitVectors(_zAxis, n);
+    grp.visible = false;
     trialGroup.add(grp);
-    gates.push({ u, pos, n, grp, ring, halo, ticks, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
+    gates.push({ u, pos, n, grp, spin, strokes, lineMat, glowMat, revealT:-1, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
+  }
+  // draw-on: each stroke grows along its own path (top sweeps one way, bottom the other, brackets follow)
+  function drawGate(g, t){
+    for (const s of g.strokes){
+      const k = clamp((t - s.delay) / s.dur, 0, 1), e = 1 - Math.pow(1 - k, 2);
+      const lu = s.line.geometry.userData, gu = s.glow.geometry.userData;
+      s.line.geometry.setDrawRange(0, Math.round(e * lu.segs) * lu.per);
+      s.glow.geometry.setDrawRange(0, Math.round(e * gu.segs) * gu.per);
+    }
+  }
+  function sfxGateReveal(){
+    const ac = audio(); if (!ac) return;
+    const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(1240, t + 0.22);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.035, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.32);
   }
 
   // --- arrow rails, built from Orlando's Arrow.svg (viewBox 164.6 × 152.2): the triangle plus the accent stroke
@@ -1081,7 +1163,7 @@
   function startTrial(){
     Object.assign(trial, { next:0, mustPass:false, goBack:false, left:TRIAL_START, lap:0, penalty:0, clean:0, missed:0,
       passNote:0, missNote:0, lastBonus:0, lastGate:0, shipU:0, shipIdx:0, offCourse:false });
-    for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.grp.visible = true; g.grp.scale.setScalar(1); }
+    for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.revealT = -1; g.grp.visible = false; g.grp.scale.setScalar(1); g.spin.scale.setScalar(1); g.spin.rotation.z = 0; }
     courseFrame(0, ship.pos, _cTan, _cRight, _cUp);
     ship.yaw = Math.atan2(-_cTan.x, -_cTan.z);
     placeTrialRocks();
@@ -1185,27 +1267,34 @@
     for (let i=0;i<GATE_N;i++){
       const g = gates[i];
       if (g.state !== 'ahead'){
+        // passed (ice flash, swells out) or missed (red, fades)
         if (g.fade <= 0){ g.grp.visible = false; continue; }
         g.fade -= rawDt;
         const k = Math.max(0, g.fade / (g.state === 'missed' ? 0.9 : 0.6));
         const c = g.state === 'missed' ? RED : ICE;
-        g.ring.material.color.copy(c); g.halo.material.color.copy(c); g.ticks.material.color.copy(c);
-        g.ring.material.opacity = k; g.halo.material.opacity = 0.5*k; g.ticks.material.opacity = k;
+        drawGate(g, 99); g.spin.scale.setScalar(1); g.spin.rotation.z = 0;
+        g.lineMat.color.copy(c); g.glowMat.color.copy(c);
+        g.lineMat.opacity = k; g.glowMat.opacity = 0.6*k;
         g.grp.scale.setScalar(1 + (1-k)*(g.state === 'missed' ? 0.1 : 0.4));
         continue;
       }
-      const isNext = i === trial.next;
-      const far = clamp(1.25 - ship.pos.distanceTo(g.pos) / 520, 0.12, 1);
-      const c = isNext && (trial.mustPass || trial.goBack) ? AMBER : g.finish ? ICE : TEAL;
-      g.ring.material.color.copy(c); g.halo.material.color.copy(c); g.ticks.material.color.copy(c);
-      if (isNext){
-        const pulse = 0.75 + 0.25*Math.sin(t*6);
-        g.ring.material.opacity = Math.max(0.7, far); g.halo.material.opacity = 0.35*pulse; g.ticks.material.opacity = 0.9;
-        g.ticks.rotation.z += rawDt * 0.6;
-      } else {
-        const near = i < trial.next + 4;
-        g.ring.material.opacity = (near ? 0.45 : 0.2) * far; g.halo.material.opacity = near ? 0.07*far : 0; g.ticks.material.opacity = (near ? 0.35 : 0.12) * far;
+      if (i !== trial.next){ g.grp.visible = false; g.revealT = -1; continue; } // only the next gate is shown
+      if (g.revealT < 0){
+        if (mission !== 'flying'){ g.grp.visible = false; continue; } // first gate reveals once you engage
+        g.revealT = reduceMotion ? GATE_REVEAL + 1 : 0;
+        if (!reduceMotion) sfxGateReveal();
       }
+      g.grp.visible = true;
+      g.revealT += rawDt;
+      const rt = g.revealT, k = 1 - Math.pow(1 - clamp(rt / GATE_REVEAL, 0, 1), 3);
+      drawGate(g, rt);
+      g.spin.scale.setScalar(1.22 - 0.22*k); g.spin.rotation.z = (1 - k) * 0.45;
+      const far = clamp(1.25 - ship.pos.distanceTo(g.pos) / 520, 0.12, 1);
+      const c = trial.mustPass || trial.goBack ? AMBER : g.finish ? ICE : TEAL;
+      const pulse = 0.75 + 0.25*Math.sin(t*6), flash = Math.max(0, 1 - Math.abs(rt - GATE_REVEAL) / 0.3); // brief glow as it locks in
+      g.lineMat.color.copy(c); g.glowMat.color.copy(c);
+      g.lineMat.opacity = Math.max(0.7, far) * (0.5 + 0.5*k);
+      g.glowMat.opacity = 0.35*pulse + 0.45*flash;
     }
   }
 
