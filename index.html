@@ -641,7 +641,7 @@
   const SIZES = { 3:{ r:5.2, pts:20, dot:5.5 }, 2:{ r:2.7, pts:50, dot:4 }, 1:{ r:1.4, pts:100, dot:2.8 } };
   const SECTOR = 210;        // half-width of the wrapping sector (fly off one side, rocks come round the other)
   const ALT_BAND = 42;       // rocks drift within this height band, same as your vertical dodge range
-  const POOL = 150, rocks = []; // asteroids mode uses up to ~70; the time-trial field uses ~120
+  const POOL = 210, rocks = []; // asteroids mode uses up to ~70; the time-trial field uses ~190
   for (let i=0;i<POOL;i++){
     const mat = new THREE.MeshPhongMaterial({ color:ROCK_COLORS[i%3], flatShading:true, shininess:4, specular:0x0a1418, emissive:new THREE.Color(0x0b3a44), emissiveIntensity:0.1 });
     const mesh = new THREE.Mesh(rockGeos[i % rockGeos.length], mat); mesh.visible = false; scene.add(mesh);
@@ -1388,7 +1388,7 @@
   let gameMode = 'asteroids';
   try { if (localStorage.getItem('stta.mode') === 'trial') gameMode = 'trial'; } catch(e){}
   const TEAL = new THREE.Color(0x0bd5ed), AMBER = new THREE.Color(0xffc04a), RED = new THREE.Color(0xfc4340), ICE = new THREE.Color(0xd1faff);
-  const GATE_N = 20, GATE_R = 22; // gate radius = the outer arcs of the HUD brackets = the pass-through radius
+  const GATE_N = 20, GATE_R = 18; // gate radius = the outer arcs of the HUD brackets = the pass-through radius
   // gates sit this far above the racing line, so the arrow rails (RAIL_Y below the line) run through their lower half
   // and you can fly anywhere from just above the arrows up through the middle and still make it
   const GATE_LIFT = 6;
@@ -1398,11 +1398,12 @@
   const trialGroup = new THREE.Group(); scene.add(trialGroup);
 
   // the course: starts where the ship spawns, heading forward, and winds round the sector (altitude stays inside ±20)
+  const COURSE_SCALE = 1.6; // stretches the layout below on the ground plane; gate spacing and time per gate scale with it
   const course = new THREE.CatmullRomCurve3([
     [0,0,0],[0,0,-180],[60,6,-380],[220,14,-520],[420,8,-540],[580,-6,-420],[640,-18,-220],[560,-10,-20],
     [380,6,80],[200,20,40],[60,12,180],[-60,-4,360],[-260,-16,420],[-440,-8,300],[-500,8,80],[-420,18,-120],
     [-260,6,-200],[-180,0,-320]
-  ].map(p => new THREE.Vector3(p[0], p[1], p[2])), false, 'centripetal');
+  ].map(p => new THREE.Vector3(p[0]*COURSE_SCALE, p[1], p[2]*COURSE_SCALE)), false, 'centripetal');
   const COURSE_L = course.getLength();
   const NS = Math.ceil(COURSE_L / 4), samples = new Float32Array((NS+1)*3);
   course.getSpacedPoints(NS).forEach((p, i) => { samples[i*3] = p.x; samples[i*3+1] = p.y; samples[i*3+2] = p.z; });
@@ -1501,10 +1502,10 @@
   }
   // hairline look: hold the stroke at ~1.5px on screen at any range (thin world-space lines would shimmer away in the distance)
   function gateWidth(g, dist){
-    const lw = clamp(dist * 0.00105, 0.035, 0.45); // ≈1px
+    const lw = clamp(dist * 0.00055, 0.02, 0.25); // ≈½px
     if (g.lw && Math.abs(lw - g.lw) / g.lw < 0.03) return;
     g.lw = lw;
-    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.5, lw * 6)); }
+    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.4, lw * 8)); }
   }
   const gateLineGeos = gatePolys.map(p => ribbonGeo(p, GATE_LINE_W)), gateGlowGeos = gatePolys.map(p => glowGeo(p, GATE_GLOW_W));
   const gates = [];
@@ -1604,7 +1605,7 @@
     const clear = (q, r) => placed.every(k => k.mesh.position.distanceTo(q) > k.r + r + 3);
     const nearGate = q => gates.some(g => g.pos.distanceTo(q) < GATE_R + 16);
     // scenery: big rocks lining the course, always outside the gate radius
-    for (let tries = 0, n = 0; n < 95 && tries < 3000; tries++){
+    for (let tries = 0, n = 0; n < 150 && tries < 5000; tries++){
       const size = rng() < 0.55 ? 3 : 2, r = SIZES[size].r;
       const u = rng() * COURSE_L, d = GATE_R + r + 5 + rng()*55, a = rng() * Math.PI * 2;
       courseFrame(u, p, _cTan, _cRight, _cUp);
@@ -1613,7 +1614,7 @@
       const k = spawnRock(size, p, ZERO); if (k){ placed.push(k); n++; }
     }
     // hazards: smaller rocks sitting on the racing line between gates (not in the first stretch) — dodge or shoot
-    for (let tries = 0, n = 0; n < 26 && tries < 2000; tries++){
+    for (let tries = 0, n = 0; n < 40 && tries < 3000; tries++){
       const size = rng() < 0.6 ? 1 : 2, r = SIZES[size].r;
       const u = COURSE_L / GATE_N + rng() * COURSE_L * (GATE_N - 1) / GATE_N, d = rng()*7, a = rng() * Math.PI * 2;
       courseFrame(u, p, _cTan, _cRight, _cUp);
@@ -1851,7 +1852,7 @@
     else if (prev) l2 += ' &nbsp;•&nbsp; +' + (total - prev).toFixed(2) + 'S OFF YOUR BEST';
     showOverlay({ scoreLabel: isBest ? 'NEW BEST' : 'BEST TIME', scoreText: fmtTime(isBest ? total : prev), title:'COURSE COMPLETE',
       line1:'TIME ' + fmtTime(total) + (trial.penalty ? ' &nbsp;•&nbsp; INCLUDES +' + trial.penalty + 'S PENALTY' : ''), line2:l2,
-      button:'CLICK TO RACE AGAIN', modes:true });
+      button:'RACE AGAIN', modes:true });
   }
 
   // ---------------------------------------------------------------
