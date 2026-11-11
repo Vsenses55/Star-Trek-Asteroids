@@ -948,7 +948,7 @@
   let gameMode = 'asteroids';
   try { if (localStorage.getItem('stta.mode') === 'trial') gameMode = 'trial'; } catch(e){}
   const TEAL = new THREE.Color(0x0bd5ed), AMBER = new THREE.Color(0xffc04a), RED = new THREE.Color(0xfc4340), ICE = new THREE.Color(0xd1faff);
-  const GATE_N = 20, GATE_R = 11;
+  const GATE_N = 20, GATE_R = 16; // gate radius = the outer arcs of the HUD brackets = the pass-through radius
   const TRIAL_START = 15, TRIAL_CAP = 40, PACE = 46, MISS_PEN = 3, TRIAL_GRIP = 2.2;
   const ZERO = new THREE.Vector3(), _zAxis = new THREE.Vector3(0,0,1), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3();
   const _cTan = new THREE.Vector3(), _cRight = new THREE.Vector3(), _cUp = new THREE.Vector3(), _col = new THREE.Color();
@@ -991,7 +991,7 @@
     ['M913.1,565.8h-3c-4.2-7.9-6.6-17-6.6-26.6s2.2-17.8,6-25.4h3.6', 0.24, 0.36],
     ['M1006.8,513.7h3.6c3.9,7.6,6,16.3,6,25.4s-2.4,18.7-6.6,26.6h-3', 0.24, 0.36],
   ];
-  const GATE_REVEAL = 0.62, GATE_LINE_W = 0.4, GATE_GLOW_W = 1.8;
+  const GATE_REVEAL = 0.62, GATE_LINE_W = 0.12, GATE_GLOW_W = 1.0; // starting widths; the next gate's are reset every frame (see gateWidth)
   const reduceMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){ return false; } })();
   // sample each path with the browser's own SVG geometry, so the shapes match the file exactly
   const gatePolys = (() => {
@@ -1021,19 +1021,19 @@
     return o;
   }
   function ribbonGeo(pts, w){ // solid stroke: 6 verts per segment
-    const o = strokeOffsets(pts, w/2), v = [];
+    const o = strokeOffsets(pts, 1), v = [], h = w/2;
     for (let i=0;i<pts.length-1;i++){
-      const a = pts[i], b = pts[i+1], na = o[i], nb = o[i+1];
+      const a = pts[i], b = pts[i+1], na = [o[i][0]*h, o[i][1]*h], nb = [o[i+1][0]*h, o[i+1][1]*h];
       v.push(a.x+na[0],a.y+na[1],0, a.x-na[0],a.y-na[1],0, b.x-nb[0],b.y-nb[1],0,
              a.x+na[0],a.y+na[1],0, b.x-nb[0],b.y-nb[1],0, b.x+nb[0],b.y+nb[1],0);
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-    g.userData.per = 6; g.userData.segs = pts.length - 1; return g;
+    g.userData = { per:6, segs:pts.length - 1, pts, o, glow:false }; return g;
   }
   function glowGeo(pts, w){ // soft glow: bright along the centre line, fading to nothing at both edges (12 verts per segment)
-    const o = strokeOffsets(pts, w/2), v = [], c = [];
+    const o = strokeOffsets(pts, 1), v = [], c = [], h = w/2;
     for (let i=0;i<pts.length-1;i++){
-      const a = pts[i], b = pts[i+1], na = o[i], nb = o[i+1];
+      const a = pts[i], b = pts[i+1], na = [o[i][0]*h, o[i][1]*h], nb = [o[i+1][0]*h, o[i+1][1]*h];
       for (const sd of [1, -1]){
         const ae = [a.x+na[0]*sd, a.y+na[1]*sd], be = [b.x+nb[0]*sd, b.y+nb[1]*sd];
         v.push(a.x,a.y,0, ae[0],ae[1],0, be[0],be[1],0,  a.x,a.y,0, be[0],be[1],0, b.x,b.y,0);
@@ -1042,7 +1042,26 @@
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-    g.userData.per = 12; g.userData.segs = pts.length - 1; return g;
+    g.userData = { per:12, segs:pts.length - 1, pts, o, glow:true }; return g;
+  }
+  // rewrite a stroke's width in place (same vertex order as ribbonGeo / glowGeo)
+  function setStrokeWidth(geo, w){
+    const { pts, o, glow } = geo.userData, h = w/2, arr = geo.attributes.position.array;
+    let j = 0;
+    const put = (x, y) => { arr[j++] = x; arr[j++] = y; arr[j++] = 0; };
+    for (let i=0;i<pts.length-1;i++){
+      const a = pts[i], b = pts[i+1], ax = o[i][0]*h, ay = o[i][1]*h, bx = o[i+1][0]*h, by = o[i+1][1]*h;
+      if (!glow){ put(a.x+ax,a.y+ay); put(a.x-ax,a.y-ay); put(b.x-bx,b.y-by); put(a.x+ax,a.y+ay); put(b.x-bx,b.y-by); put(b.x+bx,b.y+by); }
+      else for (const sd of [1, -1]){ put(a.x,a.y); put(a.x+ax*sd,a.y+ay*sd); put(b.x+bx*sd,b.y+by*sd); put(a.x,a.y); put(b.x+bx*sd,b.y+by*sd); put(b.x,b.y); }
+    }
+    geo.attributes.position.needsUpdate = true;
+  }
+  // hairline look: hold the stroke at ~1.5px on screen at any range (thin world-space lines would shimmer away in the distance)
+  function gateWidth(g, dist){
+    const lw = clamp(dist * 0.0016, 0.05, 0.6);
+    if (g.lw && Math.abs(lw - g.lw) / g.lw < 0.03) return;
+    g.lw = lw;
+    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.7, lw * 7)); }
   }
   const gateLineGeos = gatePolys.map(p => ribbonGeo(p, GATE_LINE_W)), gateGlowGeos = gatePolys.map(p => glowGeo(p, GATE_GLOW_W));
   const gates = [];
@@ -1289,7 +1308,8 @@
       const rt = g.revealT, k = 1 - Math.pow(1 - clamp(rt / GATE_REVEAL, 0, 1), 3);
       drawGate(g, rt);
       g.spin.scale.setScalar(1.22 - 0.22*k); g.spin.rotation.z = (1 - k) * 0.45;
-      const far = clamp(1.25 - ship.pos.distanceTo(g.pos) / 520, 0.12, 1);
+      const gd = ship.pos.distanceTo(g.pos), far = clamp(1.25 - gd / 520, 0.12, 1);
+      gateWidth(g, gd);
       const c = trial.mustPass || trial.goBack ? AMBER : g.finish ? ICE : TEAL;
       const pulse = 0.75 + 0.25*Math.sin(t*6), flash = Math.max(0, 1 - Math.abs(rt - GATE_REVEAL) / 0.3); // brief glow as it locks in
       g.lineMat.color.copy(c); g.glowMat.color.copy(c);
