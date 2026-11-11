@@ -995,6 +995,7 @@
     ['M913.1,565.8h-3c-4.2-7.9-6.6-17-6.6-26.6s2.2-17.8,6-25.4h3.6', 0.24, 0.36],
     ['M1006.8,513.7h3.6c3.9,7.6,6,16.3,6,25.4s-2.4,18.7-6.6,26.6h-3', 0.24, 0.36],
   ];
+  const GATE_SPIN = 0.5; // rad/s — the gate keeps turning once it's drawn in
   const GATE_REVEAL = 0.62, GATE_LINE_W = 0.12, GATE_GLOW_W = 1.0; // starting widths; the next gate's are reset every frame (see gateWidth)
   const reduceMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){ return false; } })();
   // sample each path with the browser's own SVG geometry, so the shapes match the file exactly
@@ -1062,7 +1063,7 @@
   }
   // hairline look: hold the stroke at ~1.5px on screen at any range (thin world-space lines would shimmer away in the distance)
   function gateWidth(g, dist){
-    const lw = clamp(dist * 0.00055, 0.02, 0.25); // ≈½px
+    const lw = clamp(dist * 0.00038, 0.014, 0.18); // ≈0.35px — about as fine as WebGL draws a line without breaking it up
     if (g.lw && Math.abs(lw - g.lw) / g.lw < 0.03) return;
     g.lw = lw;
     for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); setStrokeWidth(st.glow.geometry, Math.max(0.4, lw * 8)); }
@@ -1297,7 +1298,7 @@
         g.fade -= rawDt;
         const k = Math.max(0, g.fade / (g.state === 'missed' ? 0.9 : 0.6));
         const c = g.state === 'missed' ? RED : ICE;
-        drawGate(g, 99); g.spin.scale.setScalar(1); g.spin.rotation.z = 0;
+        drawGate(g, 99); g.spin.scale.setScalar(1); g.spin.rotation.z -= GATE_SPIN * rawDt;
         g.lineMat.color.copy(c); g.glowMat.color.copy(c);
         g.lineMat.opacity = k; g.glowMat.opacity = 0.6*k;
         g.grp.scale.setScalar(1 + (1-k)*(g.state === 'missed' ? 0.1 : 0.4));
@@ -1313,13 +1314,13 @@
       g.revealT += rawDt;
       const rt = g.revealT, k = 1 - Math.pow(1 - clamp(rt / GATE_REVEAL, 0, 1), 3);
       drawGate(g, rt);
-      g.spin.scale.setScalar(1.22 - 0.22*k); g.spin.rotation.z = (1 - k) * 0.45;
+      g.spin.scale.setScalar(1.22 - 0.22*k); g.spin.rotation.z = (1 - k) * 0.45 - (reduceMotion ? 0 : GATE_SPIN * rt);
       const gd = ship.pos.distanceTo(g.pos), far = clamp(1.25 - gd / 520, 0.12, 1);
       gateWidth(g, gd);
       const c = trial.mustPass || trial.goBack ? AMBER : g.finish ? ICE : TEAL;
       const pulse = 0.75 + 0.25*Math.sin(t*6), flash = Math.max(0, 1 - Math.abs(rt - GATE_REVEAL) / 0.3); // brief glow as it locks in
       g.lineMat.color.copy(c); g.glowMat.color.copy(c);
-      g.lineMat.opacity = Math.max(0.7, far) * (0.5 + 0.5*k);
+      g.lineMat.opacity = 0.5 + 0.5*k; // full strength: the stroke is so fine it needs it at any range
       g.glowMat.opacity = 0.35*pulse + 0.45*flash;
     }
   }
