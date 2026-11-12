@@ -814,6 +814,20 @@
 
   function spawnSaucer(){
     const s = saucers.find(x => !x.active); if (!s) return;
+    if (gameMode === 'trial'){
+      // time trial: comes in from ahead and off to one side, then rides along in front of you, weaving and firing back.
+      // Later in the course some are the small, sharp-shooting kind.
+      s.small = trial.next >= 12 && Math.random() < 0.35;
+      s.r = s.small ? 2.4 : 4.4; s.mesh.scale.setScalar(s.r);
+      s.side = Math.random() < 0.5 ? -1 : 1; s.phase = Math.random() * 6;
+      s.mesh.position.copy(ship.pos).addScaledVector(fwd, 230).addScaledVector(right, s.side * 90); s.mesh.position.y += 10;
+      s.vel.set(0, 0, 0);
+      s.life = 24; s.fireT = 2.5 + Math.random(); s.turnT = 0;
+      s.active = true; s.mesh.visible = true;
+      saucerAlert = 2.5;
+      startWarble(s);
+      return;
+    }
     s.small = wave >= 3 && Math.random() < Math.min(0.75, 0.25 + (wave-3)*0.15);
     s.r = s.small ? 2.4 : 4.4;
     s.mesh.scale.setScalar(s.r);
@@ -835,6 +849,7 @@
     spawnFracture(s.mesh.position, 3, 18, 'red', s.vel);
     spawnImpact(s.mesh.position, s.r * 3.5);
     if (byPhaser) score += (s.small ? 1000 : 200) * (thrustAmt > 0.5 ? 2 : 1);
+    if (byPhaser && gameMode === 'trial'){ trial.left = Math.min(TRIAL_CAP, trial.left + 2); trial.killNote = 1.6; trial.passNote = 0; } // +2 s for shooting one down
     sfxBoom(true);
     removeSaucer(s);
   }
@@ -860,7 +875,8 @@
       saucerTimer -= dt;
       if (saucerTimer <= 0){
         spawnSaucer();
-        saucerTimer = wave === 1 ? 999 : Math.max(9, 30 - wave*4) + Math.random()*10; // round 1: just the one
+        saucerTimer = gameMode === 'trial' ? 10 + Math.random()*5 // time trial level 2: a steady stream, at most two at once
+          : wave === 1 ? 999 : Math.max(9, 30 - wave*4) + Math.random()*10; // round 1: just the one
       }
     }
     if (saucerAlert > 0) saucerAlert -= dt;
@@ -869,9 +885,17 @@
       const p = s.mesh.position;
       s.life -= dt;
       if (s.life <= 0){ removeSaucer(s); continue; }
+      if (gameMode === 'trial'){
+        // pursuit: hold a weaving station 50–90 ahead of you and off to one side; peel away ahead when its time is up
+        s.phase += dt;
+        _d.copy(ship.pos).addScaledVector(fwd, 70 + 20*Math.sin(s.phase*0.7)).addScaledVector(right, s.side*(26 + 14*Math.sin(s.phase*1.1)));
+        _d.y += 6 + 7*Math.sin(s.phase*1.3);
+        if (s.life < 3) _d.addScaledVector(fwd, 500).y += 60;
+        _a.subVectors(_d, p).multiplyScalar(1.6); if (_a.length() > 130) _a.setLength(130);
+        s.vel.lerp(_a, Math.min(1, 3*dt));
+      }
       // classic zig-zag: change course every couple of seconds
-      s.turnT -= dt;
-      if (s.turnT <= 0){
+      else if ((s.turnT -= dt) <= 0){
         s.turnT = 1.6 + Math.random()*1.8;
         const ang = (Math.random()-0.5) * 1.3, c = Math.cos(ang), sn = Math.sin(ang);
         const vx = s.vel.x*c - s.vel.z*sn, vz = s.vel.x*sn + s.vel.z*c; s.vel.x = vx; s.vel.z = vz;
@@ -879,7 +903,7 @@
       }
       p.addScaledVector(s.vel, dt);
       if (Math.abs(p.y) > ALT_BAND){ p.y = Math.sign(p.y)*ALT_BAND; s.vel.y *= -1; }
-      p.x = wrapNear(p.x, ship.pos.x, SECTOR); p.z = wrapNear(p.z, ship.pos.z, SECTOR);
+      if (gameMode !== 'trial'){ p.x = wrapNear(p.x, ship.pos.x, SECTOR); p.z = wrapNear(p.z, ship.pos.z, SECTOR); }
       s.mesh.rotation.y += dt * 1.6;
       s.mesh.rotation.z = Math.sin(camT*2 + s.r) * 0.08;
 
@@ -971,7 +995,7 @@
   function paintModes(){ for (const s of ov.mode.querySelectorAll('span')) s.classList.toggle('on', s.dataset.mode === gameMode); }
   function setMode(m){
     if (m === gameMode || (mission !== 'ready' && mission !== 'lost')) return;
-    gameMode = m;
+    gameMode = m; trialLevel = 0;
     try { localStorage.setItem('stta.mode', m); } catch(e){}
     mission = 'ready'; resetMission(); showReady();
   }
@@ -979,7 +1003,7 @@
     if (gameMode === 'trial'){
       const b = trialBest();
       showOverlay({ scoreLabel:'BEST TIME', scoreText: b ? fmtTime(b) : null, title:'TIME TRIAL',
-        line1:'FLY THROUGH ' + GATE_N + ' GATES &nbsp;•&nbsp; FOLLOW THE ARROWS',
+        line1:TRIAL_LEVELS[trialLevel].name + ' &nbsp;•&nbsp; FLY THROUGH ' + GATE_N + ' GATES &nbsp;•&nbsp; FOLLOW THE ARROWS',
         line2:'CLEAN GATES ADD TIME &nbsp;•&nbsp; MISS ONE AND THE NEXT IS A MUST-PASS', button:'ENGAGE', modes:true });
     } else {
       showOverlay({ score:0, title:'ROUND ONE', line1:'THE ASTEROIDS ARE COMING FOR YOU',
@@ -1052,7 +1076,7 @@
     if (gameMode === 'trial'){
       const n = Math.min(trial.next + 1, GATE_N);
       showOverlay({ scoreLabel:'LAP TIME', scoreText:fmtTime(trial.lap + trial.penalty), title:'PAUSED',
-        line1:'GATE ' + n + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + fmtTime(Math.max(0, trial.left)) + ' LEFT',
+        line1:TRIAL_LEVELS[trialLevel].name + ' &nbsp;•&nbsp; GATE ' + n + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + fmtTime(Math.max(0, trial.left)) + ' LEFT',
         line2: trial.goBack ? 'FLY BACK THROUGH GATE ' + n : trial.mustPass ? 'GATE ' + n + ' IS A MUST-PASS' : 'CLEAN GATES ADD TIME',
         button:'RESUME' });
       if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
@@ -1340,7 +1364,7 @@
     // only mention rounds cleared when there were some, so a failure never reads like an achievement
     if (gameMode === 'trial'){
       showOverlay({ scoreLabel:'BEST TIME', scoreText: trialBest() ? fmtTime(trialBest()) : null, title:'MISSION FAILED', red:true, line1:reason,
-        line2:'GATE ' + Math.min(trial.next + 1, GATE_N) + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + trial.clean + ' CLEAN', button:'TRY AGAIN', modes:true });
+        line2:TRIAL_LEVELS[trialLevel].name + ' &nbsp;•&nbsp; GATE ' + Math.min(trial.next + 1, GATE_N) + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + trial.clean + ' CLEAN', button:'TRY AGAIN', modes:true });
       return;
     }
     const cleared = wavesCleared > 0 ? ' &nbsp;•&nbsp; ' + wavesCleared + (wavesCleared === 1 ? ' ROUND' : ' ROUNDS') + ' CLEARED' : '';
@@ -1400,16 +1424,28 @@
   const _cTan = new THREE.Vector3(), _cRight = new THREE.Vector3(), _cUp = new THREE.Vector3(), _col = new THREE.Color();
   const trialGroup = new THREE.Group(); scene.add(trialGroup);
 
-  // the course: starts where the ship spawns, heading forward, and winds round the sector (altitude stays inside ±20)
-  const COURSE_SCALE = 1.6; // stretches the layout below on the ground plane; gate spacing and time per gate scale with it
-  const course = new THREE.CatmullRomCurve3([
-    [0,0,0],[0,0,-180],[60,6,-380],[220,14,-520],[420,8,-540],[580,-6,-420],[640,-18,-220],[560,-10,-20],
-    [380,6,80],[200,20,40],[60,12,180],[-60,-4,360],[-260,-16,420],[-440,-8,300],[-500,8,80],[-420,18,-120],
-    [-260,6,-200],[-180,0,-320]
-  ].map(p => new THREE.Vector3(p[0]*COURSE_SCALE, p[1], p[2]*COURSE_SCALE)), false, 'centripetal');
-  const COURSE_L = course.getLength();
-  const NS = Math.ceil(COURSE_L / 4), samples = new Float32Array((NS+1)*3);
-  course.getSpacedPoints(NS).forEach((p, i) => { samples[i*3] = p.x; samples[i*3+1] = p.y; samples[i*3+2] = p.z; });
+  // the courses: each starts where the ship spawns, heading forward, and winds round the sector (altitude inside ±22).
+  // Level 2 is a different path with hostile saucers that pursue you and shoot.
+  const COURSE_SCALE = 1.6; // stretches the layouts below on the ground plane; gate spacing and time per gate scale with it
+  const TRIAL_LEVELS = [
+    { name:'LEVEL 1', seed:1701, hostiles:false, pts:[
+      [0,0,0],[0,0,-180],[60,6,-380],[220,14,-520],[420,8,-540],[580,-6,-420],[640,-18,-220],[560,-10,-20],
+      [380,6,80],[200,20,40],[60,12,180],[-60,-4,360],[-260,-16,420],[-440,-8,300],[-500,8,80],[-420,18,-120],
+      [-260,6,-200],[-180,0,-320] ] },
+    { name:'LEVEL 2', seed:4242, hostiles:true, pts:[  // breaks left, big sweeping loop, then a climbing run back across the top
+      [0,0,0],[0,4,-170],[-70,14,-340],[-240,22,-430],[-430,12,-380],[-540,-6,-220],[-560,-20,-20],[-480,-14,170],
+      [-320,0,280],[-140,14,300],[20,22,230],[180,10,140],[300,-8,10],[320,-20,-180],[220,-10,-340],[60,6,-470],
+      [-80,16,-600],[-200,4,-720] ] },
+  ];
+  let trialLevel = 0, builtLevel = -1;
+  let course = null, COURSE_L = 1, NS = 0, samples = new Float32Array(3);
+  function buildCourse(L){
+    course = new THREE.CatmullRomCurve3(L.pts.map(q => new THREE.Vector3(q[0]*COURSE_SCALE, q[1], q[2]*COURSE_SCALE)), false, 'centripetal');
+    COURSE_L = course.getLength();
+    NS = Math.ceil(COURSE_L / 4); samples = new Float32Array((NS+1)*3);
+    course.getSpacedPoints(NS).forEach((q, i) => { samples[i*3] = q.x; samples[i*3+1] = q.y; samples[i*3+2] = q.z; });
+  }
+  buildCourse(TRIAL_LEVELS[0]);
   function courseFrame(u, pos, tan, rt, up){
     const t = clamp(u / COURSE_L, 0, 1);
     course.getPointAt(t, pos); course.getTangentAt(t, tan).normalize();
@@ -1556,6 +1592,15 @@
     trialGroup.add(grp);
     gates.push({ u, pos, aim, n, grp, spin, dial, still, strokes, lineMat, glowMat, dimMat, revealT:-1, state:'ahead', fade:0, len:COURSE_L / GATE_N, finish:i === GATE_N-1 });
   }
+  // put the gates on the current course (called when a level's course is built)
+  function placeGates(){
+    gates.forEach((g, i) => {
+      g.u = COURSE_L * (i+1) / GATE_N; g.len = COURSE_L / GATE_N;
+      courseFrame(g.u, g.aim, g.n, _cRight, _cUp);
+      g.pos.copy(g.aim).addScaledVector(_cUp, GATE_LIFT);
+      g.grp.position.copy(g.pos); g.grp.quaternion.setFromUnitVectors(_zAxis, g.n);
+    });
+  }
   // draw-on: each stroke grows along its own path (top sweeps one way, bottom the other, brackets follow, then the detail)
   function drawGate(g, t){
     for (const s of g.strokes){
@@ -1597,41 +1642,51 @@
     g.addColorStop(0,'rgba(255,255,255,0.9)'); g.addColorStop(0.4,'rgba(255,255,255,0.3)'); g.addColorStop(1,'rgba(255,255,255,0)');
     x.fillStyle = g; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
   })();
-  const railU = [];
-  for (let u = ARROW_GAP*0.5; u < COURSE_L; u += ARROW_GAP) railU.push(u);
-  const RN = railU.length;
+  const RAIL_MAX = 1000; // arrows per side, enough for the longest course
+  let railU = [], RN = 0;
   const arrowMat = new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false });
-  const railL = new THREE.InstancedMesh(arrowGeometry(false), arrowMat, RN);
-  const railR = new THREE.InstancedMesh(arrowGeometry(true), arrowMat, RN);
+  const railL = new THREE.InstancedMesh(arrowGeometry(false), arrowMat, RAIL_MAX);
+  const railR = new THREE.InstancedMesh(arrowGeometry(true), arrowMat, RAIL_MAX);
   const haloGeo = new THREE.PlaneGeometry(ARROW_LEN*2.4, ARROW_LEN*3.4); haloGeo.rotateX(-Math.PI/2);
   const railGlow = new THREE.InstancedMesh(haloGeo, new THREE.MeshBasicMaterial({ map:arrowGlowTex, color:0xffffff, transparent:true, opacity:0.5,
-    blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide }), RN*2);
-  {
-    const m = new THREE.Matrix4(), p = new THREE.Vector3(), back = new THREE.Vector3();
+    blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide }), RAIL_MAX*2);
+  for (let i=0;i<RAIL_MAX;i++){ railL.setColorAt(i, TEAL); railR.setColorAt(i, TEAL); railGlow.setColorAt(i*2, TEAL); railGlow.setColorAt(i*2+1, TEAL); }
+  function placeRails(){
+    railU = [];
+    for (let u = ARROW_GAP*0.5; u < COURSE_L && railU.length < RAIL_MAX; u += ARROW_GAP) railU.push(u);
+    RN = railU.length;
+    const m = new THREE.Matrix4(), q = new THREE.Vector3(), back = new THREE.Vector3();
     railU.forEach((u, i) => {
-      courseFrame(u, p, _cTan, _cRight, _cUp);
+      courseFrame(u, q, _cTan, _cRight, _cUp);
       back.copy(_cTan).negate();
       m.makeBasis(_cRight, _cUp, back);
       for (const side of [-1, 1]){
-        _t1.copy(p).addScaledVector(_cRight, side*RAIL_X).addScaledVector(_cUp, -RAIL_Y);
+        _t1.copy(q).addScaledVector(_cRight, side*RAIL_X).addScaledVector(_cUp, -RAIL_Y);
         m.setPosition(_t1);
         (side < 0 ? railL : railR).setMatrixAt(i, m);
         railGlow.setMatrixAt(i*2 + (side < 0 ? 0 : 1), m);
       }
-      railL.setColorAt(i, TEAL); railR.setColorAt(i, TEAL); railGlow.setColorAt(i*2, TEAL); railGlow.setColorAt(i*2+1, TEAL);
     });
+    railL.count = railR.count = RN; railGlow.count = RN * 2;
+    railL.instanceMatrix.needsUpdate = railR.instanceMatrix.needsUpdate = railGlow.instanceMatrix.needsUpdate = true;
   }
+  // switch the course, gates and rails to a level
+  function setLevel(i){
+    trialLevel = i; buildCourse(TRIAL_LEVELS[i]); placeGates(); placeRails(); builtLevel = i;
+  }
+  placeRails(); builtLevel = 0;
   for (const r of [railGlow, railL, railR]){ r.frustumCulled = false; trialGroup.add(r); }
 
   // --- trial state
   const trial = { next:0, mustPass:false, goBack:false, left:TRIAL_START, lap:0, penalty:0, clean:0, missed:0,
     passNote:0, missNote:0, lastBonus:0, lastGate:0, prevS:[0,0], shipU:0, shipIdx:0, offCourse:false };
-  function trialBest(){ try { const v = parseFloat(localStorage.getItem('stta.trial.best')); return v > 0 ? v : null; } catch(e){ return null; } }
-  function saveBest(v){ try { localStorage.setItem('stta.trial.best', String(v)); } catch(e){} }
+  const bestKey = () => trialLevel === 0 ? 'stta.trial.best' : 'stta.trial.best.' + (trialLevel + 1);
+  function trialBest(){ try { const v = parseFloat(localStorage.getItem(bestKey())); return v > 0 ? v : null; } catch(e){ return null; } }
+  function saveBest(v){ try { localStorage.setItem(bestKey(), String(v)); } catch(e){} }
   function mulberry32(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
   function placeTrialRocks(){
-    const rng = mulberry32(1701); // fixed layout, so best times compare fairly
+    const rng = mulberry32(TRIAL_LEVELS[trialLevel].seed); // fixed layout per level, so best times compare fairly
     const p = new THREE.Vector3(), placed = [];
     const clear = (q, r) => placed.every(k => k.mesh.position.distanceTo(q) > k.r + r + 3);
     const nearGate = q => gates.some(g => g.pos.distanceTo(q) < GATE_R + 16);
@@ -1657,6 +1712,9 @@
   }
 
   function startTrial(){
+    if (builtLevel !== trialLevel) setLevel(trialLevel);
+    waveBreak = 0; trial.killNote = 0;
+    saucerTimer = TRIAL_LEVELS[trialLevel].hostiles ? 7 : Infinity; // level 2: the first saucer shows up a few seconds in
     Object.assign(trial, { next:0, mustPass:false, goBack:false, left:TRIAL_START, lap:0, penalty:0, clean:0, missed:0,
       passNote:0, missNote:0, lastBonus:0, lastGate:0, shipU:0, shipIdx:0, offCourse:false });
     for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.revealT = -1; g.grp.visible = false; g.grp.scale.setScalar(1); poseGate(g, 1, 0, 0); }
@@ -1734,6 +1792,7 @@
     trial.lap += dt; trial.left -= dt;
     if (trial.passNote > 0) trial.passNote -= dt;
     if (trial.missNote > 0) trial.missNote -= dt;
+    if (trial.killNote > 0) trial.killNote -= dt;
     checkGates();
     if (mission !== 'flying') return;
     if (trial.left <= 0){ trial.left = 0; endMission('OUT OF TIME'); }
@@ -1811,10 +1870,13 @@
   function updateTrialAdvice(dt){
     let text, tone = '', steer = false;
     const n = Math.min(trial.next + 1, GATE_N);
-    if (trial.passNote > 0) { text = '+' + trial.lastBonus.toFixed(1) + ' SEC · GATE ' + trial.lastGate + ' CLEAR'; tone = 'good'; }
+    const hostile = saucers.some(sc => sc.active && sc.life > 3);
+    if (trial.killNote > 0) { text = '+2 SEC · HOSTILE DOWN'; tone = 'good'; }
+    else if (trial.passNote > 0) { text = '+' + trial.lastBonus.toFixed(1) + ' SEC · GATE ' + trial.lastGate + ' CLEAR'; tone = 'good'; }
     else if (trial.goBack) { text = 'TURN AROUND · FLY BACK THROUGH GATE ' + n; tone = 'amber'; }
     else if (trial.missNote > 0) { text = '−' + MISS_PEN + ' SEC · GATE ' + n + ' IS A MUST-PASS'; tone = 'warn'; }
     else if (threats.ahead < 35) text = 'DODGE WITH WASD · OR FIRE';
+    else if (saucerAlert > 0 && hostile) { text = 'HOSTILE AHEAD · SHOOT IT DOWN FOR +2 SEC'; tone = 'warn'; }
     else if (trial.offCourse) text = 'OFF COURSE · FOLLOW THE ARROWS';
     else { text = (gates[n-1].finish ? 'FINISH' : 'GATE ' + n + '/' + GATE_N) + ' · ' + steerHint(); steer = true; tone = trial.mustPass ? 'amber' : ''; }
     trialAdvT -= dt;
@@ -1880,12 +1942,15 @@
     mission = 'lost'; paused = true; firing = false;
     for (const k in keys) keys[k] = false;
     if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
-    let l2 = trial.clean + ' OF ' + GATE_N + ' GATES CLEAN';
+    let l2 = TRIAL_LEVELS[trialLevel].name + ' &nbsp;•&nbsp; ' + trial.clean + ' OF ' + GATE_N + ' GATES CLEAN';
     if (prev && isBest) l2 += ' &nbsp;•&nbsp; ' + (prev - total).toFixed(2) + 'S FASTER';
     else if (prev) l2 += ' &nbsp;•&nbsp; +' + (total - prev).toFixed(2) + 'S OFF YOUR BEST';
-    showOverlay({ scoreLabel: isBest ? 'NEW BEST' : 'BEST TIME', scoreText: fmtTime(isBest ? total : prev), title:'COURSE COMPLETE',
+    const more = trialLevel < TRIAL_LEVELS.length - 1;
+    if (more) l2 += ' &nbsp;•&nbsp; NEXT: NEW COURSE, HOSTILES INBOUND';
+    showOverlay({ scoreLabel: isBest ? 'NEW BEST' : 'BEST TIME', scoreText: fmtTime(isBest ? total : prev), title: more ? 'LEVEL CLEAR' : 'COURSE COMPLETE',
       line1:'TIME ' + fmtTime(total) + (trial.penalty ? ' &nbsp;•&nbsp; INCLUDES +' + trial.penalty + 'S PENALTY' : ''), line2:l2,
-      button:'RACE AGAIN', modes:true });
+      button: more ? 'NEXT LEVEL' : 'RACE AGAIN', modes:true });
+    trialLevel = more ? trialLevel + 1 : 0; // the button starts the next level (or level 1 again after the last)
   }
 
   // ---------------------------------------------------------------
@@ -2154,7 +2219,7 @@
     setMono(el.velocity, Math.max(0, Math.round(speed*1.2) + (speed > 1 ? jitterV : 0)));
     const left = rocksAlive();
     const hl = hitsLeft();
-    el.dist.textContent = trialOn ? 'GATE ' + Math.min(trial.next + 1, GATE_N) + '/' + GATE_N + ' · LAP ' + fmtTime(trial.lap + trial.penalty)
+    el.dist.textContent = trialOn ? 'L' + (trialLevel + 1) + ' · GATE ' + Math.min(trial.next + 1, GATE_N) + '/' + GATE_N + ' · LAP ' + fmtTime(trial.lap + trial.penalty)
       : waveBreak > 0 ? 'ROUND ' + (wave+1) + ' INCOMING' : 'ROUND ' + wave + ' · ' + hl + (hl === 1 ? ' HIT' : ' HITS') + ' TO CLEAR';
     if (timeBump > 0){ timeBump -= dt; }
     el.time.style.filter = timeBump > 0 ? 'drop-shadow(0 0 8px #0bd5ed) brightness(1.4)' : '';
@@ -2170,6 +2235,7 @@
       if (threats.ahead < 35) { alert = 'EVASIVE ACTION'; cls = 'urgent'; }
       else if (trial.goBack) { alert = 'GO BACK'; cls = 'urgent amber'; }
       else if (trial.missNote > 0) { alert = 'GATE MISSED'; cls = 'urgent'; }
+      else if (saucerAlert > 0) { alert = 'VESSEL DETECTED'; }
       else if (shield <= 0) { alert = 'SHIELDS DOWN'; cls = 'steady'; }
       else if (trial.left < 5) { alert = 'TIME CRITICAL'; cls = 'urgent'; }
       else if (trial.mustPass) { alert = 'MUST PASS'; cls = 'steady amber'; }
@@ -2330,9 +2396,9 @@
       if (!sc.active) continue;
       _rel.subVectors(sc.mesh.position, ship.pos);
       let lx = _rel.dot(right), lf = _rel.dot(fwd);
-      const d = Math.hypot(lx, lf);
-      if (d > RADAR_RANGE){ lx *= RADAR_RANGE/d; lf *= RADAR_RANGE/d; } // pin to the rim when out of range
-      const x = RC + lx / RADAR_RANGE * RR * 0.9, y = RC - lf / RADAR_RANGE * RR * 0.9, z = (sc.small ? 6 : 8) * RS;
+      const d = Math.hypot(lx, lf), RG = gameMode === 'trial' ? RADAR_RANGE_TRIAL : RADAR_RANGE;
+      if (d > RG){ lx *= RG/d; lf *= RG/d; } // pin to the rim when out of range
+      const x = RC + lx / RG * RR * 0.9, y = RC - lf / RG * RR * 0.9, z = (sc.small ? 6 : 8) * RS;
       c.fillStyle = '#fc4340'; c.shadowColor = '#fc4340'; c.shadowBlur = 10;
       c.beginPath(); c.moveTo(x, y-z); c.lineTo(x+z, y); c.lineTo(x, y+z); c.lineTo(x-z, y); c.closePath(); c.fill();
     }

@@ -41,6 +41,9 @@ Pick **TIME TRIAL** on the start screen (click it, or press **T**). The choice i
 - HUD: the hint line calls the line (`GATE 4/20 · BEAR LEFT · CLIMB`), a tag over the next gate shows its range,
   a cyan edge arrow points to it when it's off-screen, and the radar shows the course and the next gate.
 - Your best time is saved in the browser (`localStorage`) and shown on the start and results screens.
+- **Level 2:** clearing level 1 unlocks **NEXT LEVEL**, a different course where red hostile saucers pursue you: they
+  ride along ahead of you, weave, and fire back. Shoot one down for +2 s. Finishing level 2 goes back to level 1
+  (**RACE AGAIN**); failing a level retries that level. Best times are kept per level.
 
 ## Project layout
 
