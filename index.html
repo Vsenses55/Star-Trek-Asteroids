@@ -204,7 +204,8 @@
      Motion (ours): idle = slow breathing glow + a light glint that circles the ring + a scan sweep across the face;
      hover = ring brightens, glow widens, glint speeds up (text doesn't move); press = quick dip. */
   @property --glint{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
-  #ov-btn{ left:694.64px; top:584px; width:532.24px; height:120.96px; display:flex; align-items:center; justify-content:center;
+  /* labels are short now (ENGAGE / RESUME / TRY AGAIN / RACE AGAIN), so the button is narrower, as in the overlay reference */
+  #ov-btn{ left:760px; top:584px; width:400px; height:120.96px; display:flex; align-items:center; justify-content:center;
     border-radius:63.36px; background:rgba(0,0,0,.6); overflow:hidden;
     box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 18px rgba(11,213,237,.22);
     font-family:var(--f-num); font-weight:800; font-size:36px; color:#fff; letter-spacing:0;
@@ -231,13 +232,13 @@
   @keyframes btnBreathe{ 50%{ box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 30px rgba(11,213,237,.42); } }
   @keyframes btnGlint{ to{ --glint:360deg; } }
   @keyframes btnSweep{ 0%{ background-position:160% 0; } 45%,100%{ background-position:-60% 0; } }
-  #ov-keys{ left:230px; top:785px; width:1460px; height:172px; display:flex; align-items:center; justify-content:center; gap:80px;
-    padding:48px 64px; border:1px solid #253b3d; border-radius:8px; background:rgba(4,71,96,.1);
+  #ov-keys{ left:230px; top:840px; width:1460px; height:132px; display:flex; align-items:center; justify-content:center; gap:80px;
+    padding:28px 64px; border:1px solid #253b3d; border-radius:8px; background:rgba(4,71,96,.1);
     box-shadow:inset 4px 0 0 #0bd5ed, inset -4px 0 0 #0bd5ed; }
   #ov-keys .k{ display:flex; flex-direction:column; align-items:center; gap:10px; }
   #ov-keys .k i{ font-style:normal; font-family:var(--f-num); font-weight:500; font-size:16px; color:var(--cyan); text-box:trim-both cap alphabetic; line-height:1; }
   #ov-keys .k b{ font-family:var(--f-num); font-weight:800; font-size:30px; color:#fff; text-box:trim-both cap alphabetic; line-height:1; }
-  #ov-keys .div{ width:1px; height:74px; background:#044760; }
+  #ov-keys .div{ width:1px; height:60px; background:#044760; }
   .no-euro #ov-title{ -webkit-text-stroke:2px currentColor; }
   .no-euro #ov-score-lbl{ -webkit-text-stroke:0.5px currentColor; }
   /* advice line (was the decorative GRAVITATION OUTPUT label): short context hints under the alert slot */
@@ -270,7 +271,7 @@
   #gate-tag.finish{ color:#fff; text-shadow:0 0 6px rgba(209,250,255,.8); }
   #gate-tag span{ font-weight:500; opacity:.8; margin-left:8px; }
   /* mode picker on the start / results screens (temporary until the Figma mode-select overlay exists) */
-  #ov-mode{ left:50%; top:736px; transform:translateX(-50%); display:flex; align-items:center; gap:22px;
+  #ov-mode{ left:50%; top:760px; transform:translateX(-50%); display:flex; align-items:center; gap:22px;
     font-family:var(--f-num); font-weight:700; font-size:18px; letter-spacing:.14em; }
   #ov-mode span{ color:rgba(11,213,237,.45); cursor:pointer; transition:color .2s, text-shadow .2s; }
   #ov-mode span:hover{ color:var(--cyan); }
@@ -421,7 +422,7 @@
     <div class="ov num trim" id="ov-score">0</div>
     <div class="ov cyan" id="ov-title">ROUND ONE</div>
     <div class="ov" id="ov-sub"><div class="l1">THE ASTEROIDS ARE COMING FOR YOU</div><div class="l2">CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER</div></div>
-    <div class="ov" id="ov-btn"><span id="ov-btn-txt">CLICK TO ENGAGE</span></div>
+    <div class="ov" id="ov-btn"><span id="ov-btn-txt">ENGAGE</span></div>
     <div class="ov" id="ov-mode"><span data-mode="asteroids">ASTEROIDS</span><i>T</i><span data-mode="trial">TIME TRIAL</span></div>
     <div class="ov" id="ov-keys">
       <div class="k"><i>DODGE</i><b>WASD</b></div><div class="div"></div>
@@ -979,10 +980,10 @@
       const b = trialBest();
       showOverlay({ scoreLabel:'BEST TIME', scoreText: b ? fmtTime(b) : null, title:'TIME TRIAL',
         line1:'FLY THROUGH ' + GATE_N + ' GATES &nbsp;•&nbsp; FOLLOW THE ARROWS',
-        line2:'CLEAN GATES ADD TIME &nbsp;•&nbsp; MISS ONE AND THE NEXT IS A MUST-PASS', button:'CLICK TO ENGAGE', modes:true });
+        line2:'CLEAN GATES ADD TIME &nbsp;•&nbsp; MISS ONE AND THE NEXT IS A MUST-PASS', button:'ENGAGE', modes:true });
     } else {
       showOverlay({ score:0, title:'ROUND ONE', line1:'THE ASTEROIDS ARE COMING FOR YOU',
-        line2:'CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER', button:'CLICK TO ENGAGE', modes:true });
+        line2:'CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER', button:'ENGAGE', modes:true });
     }
   }
   const NUM_WORDS = ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','TEN','ELEVEN','TWELVE',
@@ -1053,13 +1054,13 @@
       showOverlay({ scoreLabel:'LAP TIME', scoreText:fmtTime(trial.lap + trial.penalty), title:'PAUSED',
         line1:'GATE ' + n + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + fmtTime(Math.max(0, trial.left)) + ' LEFT',
         line2: trial.goBack ? 'FLY BACK THROUGH GATE ' + n : trial.mustPass ? 'GATE ' + n + ' IS A MUST-PASS' : 'CLEAN GATES ADD TIME',
-        button:'CLICK TO RESUME' });
+        button:'RESUME' });
       if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
       return;
     }
     const hl = hitsLeft();
     showOverlay({ score, title:'PAUSED', line1:'ROUND ' + numWord(wave) + ' &nbsp;•&nbsp; ' + fmtTime(waveTime) + ' LEFT',
-      line2: waveBreak > 0 ? 'ROUND ' + numWord(wave+1) + ' INCOMING' : hl + (hl === 1 ? ' HIT' : ' HITS') + ' TO CLEAR', button:'CLICK TO RESUME' });
+      line2: waveBreak > 0 ? 'ROUND ' + numWord(wave+1) + ' INCOMING' : hl + (hl === 1 ? ' HIT' : ' HITS') + ' TO CLEAR', button:'RESUME' });
     if (document.pointerLockElement === stage) try { document.exitPointerLock(); } catch(e){}
   }
   // no preventDefault: it would stop the frame from taking keyboard focus
@@ -1339,11 +1340,11 @@
     // only mention rounds cleared when there were some, so a failure never reads like an achievement
     if (gameMode === 'trial'){
       showOverlay({ scoreLabel:'BEST TIME', scoreText: trialBest() ? fmtTime(trialBest()) : null, title:'MISSION FAILED', red:true, line1:reason,
-        line2:'GATE ' + Math.min(trial.next + 1, GATE_N) + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + trial.clean + ' CLEAN', button:'CLICK TO TRY AGAIN', modes:true });
+        line2:'GATE ' + Math.min(trial.next + 1, GATE_N) + ' OF ' + GATE_N + ' &nbsp;•&nbsp; ' + trial.clean + ' CLEAN', button:'TRY AGAIN', modes:true });
       return;
     }
     const cleared = wavesCleared > 0 ? ' &nbsp;•&nbsp; ' + wavesCleared + (wavesCleared === 1 ? ' ROUND' : ' ROUNDS') + ' CLEARED' : '';
-    showOverlay({ score, title:'MISSION FAILED', red:true, line1:reason, line2:'ROUND ' + numWord(wave) + cleared, button:'CLICK TO TRY AGAIN', modes:true });
+    showOverlay({ score, title:'MISSION FAILED', red:true, line1:reason, line2:'ROUND ' + numWord(wave) + cleared, button:'TRY AGAIN', modes:true });
   }
 
   function resetMission(){
@@ -1393,6 +1394,8 @@
   // and you can fly anywhere from just above the arrows up through the middle and still make it
   const GATE_LIFT = 6;
   const TRIAL_START = 15, TRIAL_CAP = 40, PACE = 46, MISS_PEN = 3, TRIAL_GRIP = 2.2;
+  const RIDE_H = 5;       // you start (and the hints steer you) this far above the racing line: clear of the arrows, near gate centre
+  const CRUISE = 45, CRUISE_ACC = 30, COAST_DEC = 8; // time trial: the ship cruises on its own; thrust boosts above it, brake slows below it
   const ZERO = new THREE.Vector3(), _zAxis = new THREE.Vector3(0,0,1), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3();
   const _cTan = new THREE.Vector3(), _cRight = new THREE.Vector3(), _cUp = new THREE.Vector3(), _col = new THREE.Color();
   const trialGroup = new THREE.Group(); scene.add(trialGroup);
@@ -1497,7 +1500,7 @@
     const lw = clamp(dist * 0.00038, 0.014, 0.18); // ≈0.35px — about as fine as WebGL draws a line without breaking it up
     if (g.lw && Math.abs(lw - g.lw) / g.lw < 0.03) return;
     g.lw = lw;
-    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, lw); if (st.glow) setStrokeWidth(st.glow.geometry, Math.max(0.4, lw * 8)); }
+    for (const st of g.strokes){ setStrokeWidth(st.line.geometry, st.glow ? lw : lw * 1.7); if (st.glow) setStrokeWidth(st.glow.geometry, Math.max(0.4, lw * 8)); } // detail strokes (no glow) a touch heavier so they read
   }
 
   // --- fine HUD detail around the brackets (after Orlando's reference): kept as hairlines with no glow so it stays light
@@ -1658,6 +1661,7 @@
       passNote:0, missNote:0, lastBonus:0, lastGate:0, shipU:0, shipIdx:0, offCourse:false });
     for (const g of gates){ g.state = 'ahead'; g.fade = 0; g.revealT = -1; g.grp.visible = false; g.grp.scale.setScalar(1); poseGate(g, 1, 0, 0); }
     courseFrame(0, ship.pos, _cTan, _cRight, _cUp);
+    ship.pos.addScaledVector(_cUp, RIDE_H);
     ship.yaw = Math.atan2(-_cTan.x, -_cTan.z);
     placeTrialRocks();
     resetGateSides();
@@ -1767,7 +1771,7 @@
         const c = g.state === 'missed' ? RED : ICE;
         drawGate(g, 99); poseGate(g, 1, g.spin.rotation.z - GATE_SPIN * rawDt, g.dial.rotation.z + DIAL_SPIN * rawDt);
         g.lineMat.color.copy(c); g.glowMat.color.copy(c); g.dimMat.color.copy(c);
-        g.lineMat.opacity = k; g.glowMat.opacity = 0.6*k; g.dimMat.opacity = 0.6*k;
+        g.lineMat.opacity = k; g.glowMat.opacity = 0.6*k; g.dimMat.opacity = k;
         g.grp.scale.setScalar(1 + (1-k)*(g.state === 'missed' ? 0.1 : 0.4));
         continue;
       }
@@ -1788,14 +1792,14 @@
       const pulse = 0.75 + 0.25*Math.sin(t*6), flash = Math.max(0, 1 - Math.abs(rt - GATE_REVEAL) / 0.3); // brief glow as it locks in
       g.lineMat.color.copy(c); g.glowMat.color.copy(c); g.dimMat.color.copy(c);
       g.lineMat.opacity = 0.5 + 0.5*k; // full strength: the stroke is so fine it needs it at any range
-      g.dimMat.opacity = 0.6 * (0.5 + 0.5*k);
+      g.dimMat.opacity = 0.5 + 0.5*k;
       g.glowMat.opacity = 0.35*pulse + 0.45*flash;
     }
   }
 
   function steerHint(){
     const g = gates[Math.min(trial.next, GATE_N-1)];
-    _t1.subVectors(g.aim, ship.pos); // steer for the racing line; the gate is big enough around it
+    _t1.copy(g.aim).addScaledVector(_up, RIDE_H).sub(ship.pos); // steer for ride height over the racing line
     const lx = _t1.dot(right), lf = _t1.dot(fwd), dy = _t1.y, ang = Math.atan2(lx, lf), a = Math.abs(ang);
     const lr = ang > 0 ? 'RIGHT' : 'LEFT';
     let h = a < 0.1 ? 'STRAIGHT AHEAD' : a < 0.55 ? 'BEAR ' + lr : a < 1.7 ? 'HARD ' + lr : 'TURN AROUND';
@@ -1966,6 +1970,11 @@
     if (keys.brake && sp > 0) ship.vel.multiplyScalar(Math.max(0, sp - BRAKE_DEC*dt) / sp);
     ship.vel.multiplyScalar(1 - DRIFT_DRAG*dt);
     if (ship.vel.length() > MAX_SPEED) ship.vel.setLength(MAX_SPEED);
+    if (gameMode === 'trial' && mission === 'flying'){ // cruise: keep moving without holding thrust; ease back down to cruise after a boost
+      const vf = ship.vel.dot(fwd);
+      if (!keys.brake && vf < CRUISE) ship.vel.addScaledVector(fwd, Math.min(CRUISE - vf, CRUISE_ACC*dt));
+      else if (!keys.thrust && vf > CRUISE) ship.vel.addScaledVector(fwd, -Math.min(vf - CRUISE, COAST_DEC*dt));
+    }
     if (gameMode === 'trial'){ // racing grip: sideways slide bleeds off so the ship follows its nose through turns
       _a.copy(fwd).multiplyScalar(ship.vel.dot(fwd));
       ship.vel.lerp(_a, Math.min(1, TRIAL_GRIP*dt));
@@ -2002,7 +2011,7 @@
     sky.position.copy(camera.position);
     sky.rotation.y += rawDt * 0.0035; // distant stars wheel very slowly, always
     updatePlanets(rawDt);
-    updateDust(camera.position, shipVel, clamp((shipVel.length() - 30) / 40, 0, 1) * (0.4 + 0.6*thrustAmt));
+    updateDust(camera.position, shipVel, clamp((shipVel.length() - 30) / 40, 0, 1) * (gameMode === 'trial' ? thrustAmt : 0.4 + 0.6*thrustAmt)); // time trial: streaks only on boost
 
     // --- rocks
     let best = null, bestDist = Infinity;

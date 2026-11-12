@@ -199,7 +199,8 @@
      Motion (ours): idle = slow breathing glow + a light glint that circles the ring + a scan sweep across the face;
      hover = ring brightens, glow widens, glint speeds up (text doesn't move); press = quick dip. */
   @property --glint{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
-  #ov-btn{ left:694.64px; top:584px; width:532.24px; height:120.96px; display:flex; align-items:center; justify-content:center;
+  /* labels are short now (ENGAGE / RESUME / TRY AGAIN / RACE AGAIN), so the button is narrower, as in the overlay reference */
+  #ov-btn{ left:760px; top:584px; width:400px; height:120.96px; display:flex; align-items:center; justify-content:center;
     border-radius:63.36px; background:rgba(0,0,0,.6); overflow:hidden;
     box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 18px rgba(11,213,237,.22);
     font-family:var(--f-num); font-weight:800; font-size:36px; color:#fff; letter-spacing:0;
@@ -226,13 +227,13 @@
   @keyframes btnBreathe{ 50%{ box-shadow:0 4.32px 5.76px rgba(0,0,0,.1), 0 0 30px rgba(11,213,237,.42); } }
   @keyframes btnGlint{ to{ --glint:360deg; } }
   @keyframes btnSweep{ 0%{ background-position:160% 0; } 45%,100%{ background-position:-60% 0; } }
-  #ov-keys{ left:230px; top:785px; width:1460px; height:172px; display:flex; align-items:center; justify-content:center; gap:80px;
-    padding:48px 64px; border:1px solid #253b3d; border-radius:8px; background:rgba(4,71,96,.1);
+  #ov-keys{ left:230px; top:840px; width:1460px; height:132px; display:flex; align-items:center; justify-content:center; gap:80px;
+    padding:28px 64px; border:1px solid #253b3d; border-radius:8px; background:rgba(4,71,96,.1);
     box-shadow:inset 4px 0 0 #0bd5ed, inset -4px 0 0 #0bd5ed; }
   #ov-keys .k{ display:flex; flex-direction:column; align-items:center; gap:10px; }
   #ov-keys .k i{ font-style:normal; font-family:var(--f-num); font-weight:500; font-size:16px; color:var(--cyan); text-box:trim-both cap alphabetic; line-height:1; }
   #ov-keys .k b{ font-family:var(--f-num); font-weight:800; font-size:30px; color:#fff; text-box:trim-both cap alphabetic; line-height:1; }
-  #ov-keys .div{ width:1px; height:74px; background:#044760; }
+  #ov-keys .div{ width:1px; height:60px; background:#044760; }
   .no-euro #ov-title{ -webkit-text-stroke:2px currentColor; }
   .no-euro #ov-score-lbl{ -webkit-text-stroke:0.5px currentColor; }
   /* advice line (was the decorative GRAVITATION OUTPUT label): short context hints under the alert slot */
@@ -265,7 +266,7 @@
   #gate-tag.finish{ color:#fff; text-shadow:0 0 6px rgba(209,250,255,.8); }
   #gate-tag span{ font-weight:500; opacity:.8; margin-left:8px; }
   /* mode picker on the start / results screens (temporary until the Figma mode-select overlay exists) */
-  #ov-mode{ left:50%; top:736px; transform:translateX(-50%); display:flex; align-items:center; gap:22px;
+  #ov-mode{ left:50%; top:760px; transform:translateX(-50%); display:flex; align-items:center; gap:22px;
     font-family:var(--f-num); font-weight:700; font-size:18px; letter-spacing:.14em; }
   #ov-mode span{ color:rgba(11,213,237,.45); cursor:pointer; transition:color .2s, text-shadow .2s; }
   #ov-mode span:hover{ color:var(--cyan); }
@@ -366,7 +367,7 @@
     <div class="ov num trim" id="ov-score">0</div>
     <div class="ov cyan" id="ov-title">ROUND ONE</div>
     <div class="ov" id="ov-sub"><div class="l1">THE ASTEROIDS ARE COMING FOR YOU</div><div class="l2">CLEAR THEM BEFORE THE CLOCK RUNS OUT &nbsp;•&nbsp; EACH ROUND GETS HARDER</div></div>
-    <div class="ov" id="ov-btn"><span id="ov-btn-txt">CLICK TO ENGAGE</span></div>
+    <div class="ov" id="ov-btn"><span id="ov-btn-txt">ENGAGE</span></div>
     <div class="ov" id="ov-mode"><span data-mode="asteroids">ASTEROIDS</span><i>T</i><span data-mode="trial">TIME TRIAL</span></div>
     <div class="ov" id="ov-keys">
       <div class="k"><i>DODGE</i><b>WASD</b></div><div class="div"></div>
